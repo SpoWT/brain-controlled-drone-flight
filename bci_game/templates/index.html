@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="neural-ride-token" content="{{ token }}">
+  <title>Neural Ride</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23171513'/%3E%3Ccircle cx='32' cy='32' r='14' fill='none' stroke='%23f2b13c' stroke-width='5'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+</head>
+<body>
+  <div class="ride" id="ride" aria-label="Driving view">
+    <div class="ride-shade" aria-hidden="true"></div>
+    <div class="ride-flash" data-ride-flash aria-hidden="true"></div>
+    <div class="ride-hud" aria-hidden="true">
+      <div class="ride-progress" data-ride-progress></div>
+      <span class="ride-rec"></span>
+      <canvas class="ride-gauge" data-ride-gauge></canvas>
+      <canvas class="ride-mind" id="mind-gauge"></canvas>
+      <p class="ride-mind-note" id="mind-note"></p>
+    </div>
+    <p class="ride-fallback" id="ride-fallback" hidden>3D view unavailable — this browser has WebGL turned off.</p>
+  </div>
+
+  <div class="shell" id="shell">
+    <header class="topbar">
+      <div class="mark">NEURAL<i>·</i>RIDE</div>
+      <div class="seg" role="tablist" aria-label="Mode">
+        <button type="button" role="tab" data-mode="record" aria-selected="true">RECORD</button>
+        <button type="button" role="tab" data-mode="drive" aria-selected="false">DRIVE</button>
+      </div>
+      <div class="topbar-right">
+        <div class="chip" id="headset-chip"><span class="dot off"></span><span id="headset-label">NO HEADSET</span></div>
+        <button type="button" class="stopbtn" id="stop-all">STOP</button>
+      </div>
+    </header>
+
+    <nav class="steps" aria-label="Progress">
+      <button type="button" class="step" data-step="headset"><b></b><span>01 HEADSET</span></button>
+      <button type="button" class="step" data-step="signal"><b></b><span>02 SIGNAL</span></button>
+      <button type="button" class="step" data-step="ride"><b></b><span>03 RIDE</span></button>
+      <button type="button" class="step" data-step="train"><b></b><span>04 TRAIN</span></button>
+      <button type="button" class="step" data-step="drive"><b></b><span>05 DRIVE</span></button>
+    </nav>
+
+    <!-- 01 HEADSET -->
+    <section class="view" data-view="headset">
+      <div class="hero">
+        <p class="kicker">HEADSET</p>
+        <h1>Put the headset on.<br>Then connect.</h1>
+        <p class="lede">Ganglion on battery, ear clips on, combs through the hair onto the scalp. The 3D road behind this page is the ride you will label with your reactions.</p>
+      </div>
+      <div class="cta">
+        <button type="button" class="go-btn" id="connect-ganglion">CONNECT GANGLION <i>→</i></button>
+        <button type="button" class="ghost" id="connect-sim">USE SIMULATOR</button>
+      </div>
+      <p class="note" id="connect-note"></p>
+    </section>
+
+    <!-- 02 SIGNAL -->
+    <section class="view" data-view="signal" hidden>
+      <div class="hero">
+        <p class="kicker">SIGNAL CHECK</p>
+        <h1 id="signal-headline">Reading the channels…</h1>
+        <p class="lede" id="signal-lede">Sit still for a few seconds while each channel settles.</p>
+      </div>
+      <div class="panel channels" id="channels"></div>
+      <div class="cta">
+        <button type="button" class="go-btn" id="start-ride">START RIDE <i>→</i></button>
+        <div class="length seg" role="radiogroup" aria-label="Ride length">
+          <button type="button" data-minutes="2" aria-checked="false">2 MIN</button>
+          <button type="button" data-minutes="5" aria-checked="false">5 MIN</button>
+          <button type="button" data-minutes="8" aria-checked="true">8 MIN</button>
+        </div>
+        <p class="hint">hold <kbd>↑</kbd> to drive · let go to stop<br><kbd>esc</kbd> ends early and saves</p>
+      </div>
+    </section>
+
+    <!-- 04 TRAIN / PIT WALL -->
+    <section class="view view-wide" data-view="train" hidden>
+      <div class="hero">
+        <p class="kicker" id="train-kicker">RIDES</p>
+        <h1 id="train-headline">No rides yet.</h1>
+        <p class="lede" id="train-lede">Every keypress and hazard is stored next to the raw EEG, so labels can be re-derived later.</p>
+        <div class="cta">
+          <button type="button" class="go-btn" id="train-model">TRAIN MODEL <i>→</i></button>
+          <button type="button" class="ghost" id="ride-again">RIDE AGAIN</button>
+        </div>
+        <p class="note" id="train-note"></p>
+      </div>
+      <div class="side">
+        <div class="panel table-wrap">
+          <table class="tbl">
+            <thead><tr><th>RIDE</th><th>LENGTH</th><th>STOPS</th><th>LATE</th><th>REACTION</th><th>USE</th></tr></thead>
+            <tbody id="sessions"></tbody>
+          </table>
+        </div>
+        <div class="panel result" id="result" hidden>
+          <div class="result-main">
+            <p class="kicker muted" id="result-method">HELD-OUT · BALANCED ACCURACY</p>
+            <div class="big" id="result-accuracy">—</div>
+            <div class="meter"><b id="result-meter"></b></div>
+            <p class="hint" id="result-detail"></p>
+          </div>
+          <div class="result-side">
+            <ol class="board" id="result-board" aria-label="Every model, held-out balanced accuracy"></ol>
+            <p class="hint" id="result-recall"></p>
+            <button type="button" class="go-btn" id="go-drive">DRIVE WITH MIND <i>→</i></button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 05 DRIVE -->
+    <section class="view" data-view="drive" hidden>
+      <div class="hero">
+        <p class="kicker">DRIVE WITH YOUR MIND</p>
+        <h1 id="drive-headline">The model holds the pedal.</h1>
+        <p class="lede" id="drive-lede">Hands off the keys. Think GO to roll, STOP to brake. Every drive is recorded too, so you can see how the model did.</p>
+      </div>
+      <div class="cta">
+        <button type="button" class="go-btn" id="start-drive">START DRIVE <i>→</i></button>
+        <p class="hint" id="drive-hint"><kbd>esc</kbd> ends the drive</p>
+      </div>
+    </section>
+  </div>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
+  <script type="module" src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

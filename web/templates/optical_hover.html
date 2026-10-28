@@ -1,0 +1,919 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Optical Hover Control</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #fff; color: #000; font: 16px/1.4 Arial, sans-serif; }
+    main { max-width: 720px; margin: 24px auto; padding: 0 16px 32px; }
+    h1 { margin: 0 0 16px; font-size: 24px; }
+    .box { border: 2px solid #000; margin-top: 12px; padding: 12px; }
+    .row { border-top: 1px solid #000; padding: 8px 0; }
+    .row:first-child { border-top: 0; }
+    .confirm { display: flex; gap: 8px; font-weight: bold; }
+    .confirm input { width: 18px; height: 18px; margin: 2px 0 0; }
+    .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    button { min-height: 48px; border: 2px solid #000; background: #fff; color: #000; font: inherit; font-weight: bold; }
+    button:active { background: #000; color: #fff; }
+    button:disabled { border-style: dashed; }
+    #emergencyButton { grid-column: 1 / -1; border-width: 3px; }
+    #statusText { font-weight: bold; }
+    h2 { margin: 0; font-size: 16px; }
+    button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid #000; outline-offset: 3px; }
+    .eeg-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 8px; }
+    .eeg-header button { min-height: 40px; padding: 6px 10px; }
+    .eeg-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+    [hidden] { display: none !important; }
+    .eeg-caption { margin: 0 0 8px; font-size: 13px; }
+    .eeg-channel { display: grid; grid-template-columns: 54px minmax(0, 1fr); align-items: center; border-top: 1px solid #000; }
+    .eeg-channel strong { font-size: 13px; }
+    .eeg-channel canvas { display: block; width: 100%; height: 58px; }
+    .confidence-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+    #eegDecision { font-size: 24px; font-weight: bold; }
+    .confidence-bars { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 10px 0; }
+    .confidence-label { display: flex; justify-content: space-between; font-variant-numeric: tabular-nums; }
+    .confidence-track { height: 14px; border: 1px solid #000; margin-top: 4px; }
+    .confidence-fill { height: 100%; width: 0; background: #000; }
+    .threshold-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+    #stopThreshold { display: block; width: 100%; margin: 12px 0; accent-color: #000; }
+    #stopThresholdNumber { width: 62px; border: 1px solid #000; background: #fff; padding: 5px; font: inherit; font-variant-numeric: tabular-nums; }
+    #eegPredictionNote { margin: 8px 0 0; font-size: 13px; min-height: 18px; }
+    #modelScore { margin: 10px 0; font-weight: bold; font-variant-numeric: tabular-nums; }
+    .settings { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .settings label { display: grid; gap: 4px; font-size: 13px; font-weight: bold; }
+    .settings input { width: 100%; border: 1px solid #000; background: #fff; padding: 8px; font: inherit; font-variant-numeric: tabular-nums; }
+    .readout { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; font-variant-numeric: tabular-nums; }
+    .readout div { border: 1px solid #000; padding: 6px 8px; }
+    .readout span { display: block; font-size: 12px; }
+    .readout strong { font-size: 20px; }
+    kbd { display: inline-block; min-width: 26px; padding: 2px 6px; border: 1px solid #000; border-bottom-width: 3px; text-align: center; font: bold 13px Arial, sans-serif; transition: transform 80ms ease-out; }
+    kbd.down { background: #000; color: #fff; transform: translateY(1px); }
+    #faultText { margin: 8px 0 0; font-weight: bold; }
+    #faultText:empty { display: none; }
+    /* connection lights from /api/checkup */
+    .links-wrap { margin-left: auto; display: grid; justify-items: end; gap: 3px; }
+    .links { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px 5px; }
+    .link { display: inline-flex; align-items: center; gap: 5px; padding: 2px 7px; border: 2px solid #000;
+      font: bold 12px/1.3 Arial, sans-serif; white-space: nowrap; background: #fff; cursor: help; }
+    .link i { width: 9px; height: 9px; background: #bbb; flex: none; }
+    .link[data-level="ok"] i { background: #0a7d2c; }
+    .link[data-level="warn"] i { background: #e09a00; }
+    .link[data-level="bad"] { background: #c40000; border-color: #c40000; color: #fff; }
+    .link[data-level="bad"] i { background: #fff; }
+    .link[data-level="off"] { border-color: #bbb; color: #777; }
+    .link.rec { border-color: #c40000; color: #c40000; }
+    .link.rec i { background: #c40000; }
+    @media (prefers-reduced-motion: no-preference) { .link.rec i { animation: rec 1s steps(2, jump-none) infinite; } }
+    @keyframes rec { to { opacity: 0.15; } }
+    #linkFix { margin: 0; font-size: 13px; font-weight: bold; color: #c40000; text-align: right; }
+    #linkFix:empty { display: none; }
+    /* one-screen layout: flight | eyes + direction | EEG */
+    .panel-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+    .status-line { font-size: 18px; font-weight: bold; letter-spacing: 0.02em; }
+    .dash-head h1 { margin: 0; }
+    .eye-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .eye { margin: 0; border: 1px solid #000; }
+    .eye img { display: block; width: 100%; height: auto; aspect-ratio: 4 / 3; background: #000; object-fit: cover; }
+    .eye figcaption { padding: 4px 6px; font-size: 12px; font-variant-numeric: tabular-nums; border-top: 1px solid #000; min-height: 38px; }
+    .eye-stats { display: block; }
+    .eye-tools { float: right; display: inline-flex; gap: 4px; }
+    .eye .mini { min-height: 24px; min-width: 28px; padding: 0 6px; font-size: 14px; border-width: 1px; line-height: 1; }
+    .command-now { font-size: 18px; letter-spacing: 0.04em; transition: opacity 120ms ease-out; }
+    .steer-grid { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 10px; align-items: center; }
+    #headingDial { width: 112px; height: 112px; display: block; }
+    #headingDial line { transition: transform 160ms ease-out; }
+    @media (prefers-reduced-motion: reduce) { #headingDial line { transition: none; } }
+    .steer-readout { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-variant-numeric: tabular-nums; }
+    .steer-readout div { border: 1px solid #000; padding: 4px 8px; }
+    .steer-readout span { display: block; font-size: 11px; }
+    .steer-readout strong { font-size: 17px; }
+    .steer .confirm { margin: 0; }
+    .head-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+    #recenterHead { min-height: 32px; padding: 2px 10px; font-size: 13px; }
+    #recenterHead kbd { min-width: 18px; padding: 0 4px; font-size: 11px; }
+    .keys { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; margin-top: 8px; }
+    .model-row { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+    #eegModelName { font-weight: bold; letter-spacing: 0.04em; }
+    @media (min-width: 1100px) {
+      html, body { height: 100%; }
+      body { overflow: hidden; }
+      main.dash { max-width: none; height: 100vh; margin: 0; padding: 10px 14px; display: grid; gap: 10px;
+        grid-template-columns: minmax(290px, 0.9fr) minmax(430px, 1.25fr) minmax(370px, 1.1fr);
+        grid-template-rows: auto minmax(0, 1fr); grid-template-areas: "head head head" "flight view brain"; }
+      .dash-head { grid-area: head; margin: 0; padding: 6px 12px; display: flex; align-items: center; gap: 24px; }
+      .dash-head h1 { font-size: 18px; white-space: nowrap; }
+      .dash-head #faultText { margin: 0; font-size: 14px; }
+      .col { min-height: 0; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
+      .col-flight { grid-area: flight; } .col-view { grid-area: view; } .col-brain { grid-area: brain; }
+      .col > .box, .col > section.box { margin-top: 0; padding: 8px 10px; }
+      button { min-height: 42px; }
+      .readout strong { font-size: 18px; }
+      .eeg-channel canvas { height: 38px; }
+      .eeg-header { margin-bottom: 2px; }
+      .eeg-header button { min-height: 34px; }
+      .keys { margin-top: 4px; gap: 4px 12px; }
+      #eegDecision { font-size: 20px; }
+      .confidence-bars { margin: 6px 0; }
+      .row { padding: 5px 0; }
+      #stopThreshold { margin: 6px 0; }
+      #eegPredictionNote {
+        margin: 2px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    }
+    @media (min-width: 1500px) and (min-height: 950px) {
+      main.dash { grid-template-columns: minmax(300px, 0.8fr) minmax(560px, 1.55fr) minmax(400px, 1fr); }
+      .eeg-channel canvas { height: 66px; }
+      .status-line { font-size: 22px; }
+      .readout strong, .steer-readout strong { font-size: 22px; }
+      #headingDial { width: 140px; height: 140px; }
+      .steer-grid { grid-template-columns: 140px minmax(0, 1fr); }
+    }
+    @media (min-width: 1100px) and (max-height: 780px) {
+      .eeg-channel canvas { height: 26px; }
+      button { min-height: 36px; }
+      .eye figcaption { min-height: 32px; }
+    }
+    @media (max-width: 560px) { .readout { grid-template-columns: repeat(2, 1fr); } .settings { grid-template-columns: 1fr; } }
+    @media (max-width: 420px) { .eeg-header { flex-wrap: wrap; } .confidence-head { align-items: flex-start; } }
+  </style>
+</head>
+<body>
+  <main class="dash">
+    <header class="box dash-head">
+      <h1>DRONE</h1>
+      <div class="status-line"><span id="statusText">{% if controls_ready %}DISARMED{% else %}LOCKED{% endif %}</span></div>
+      <p id="faultText" role="alert"></p>
+      <div class="links-wrap">
+        <div id="links" class="links" aria-label="Connections"></div>
+        <p id="linkFix" aria-live="polite"></p>
+      </div>
+    </header>
+    <div class="col col-flight">
+      <div class="box buttons">
+        <button id="armButton" type="button" disabled>ARM &amp; TAKE OFF</button>
+        <button id="goButton" type="button" disabled>GO FORWARD</button>
+        <button id="stopButton" type="button" disabled>STOP &amp; HOVER</button>
+        <button id="landButton" type="button" disabled>LAND</button>
+        <button id="emergencyButton" type="button">EMERGENCY MOTOR CUT</button>
+      </div>
+      <div class="box">
+        <label class="confirm"><input id="flightConfirmed" type="checkbox"{% if not controls_ready %} disabled{% endif %}><span>Level floor · area clear</span></label>
+      </div>
+      {% if assisted %}
+      <div class="box">
+        <div class="readout" aria-live="off">
+          <div><span>HEIGHT</span><strong id="heightValue">—</strong></div>
+          <div><span>TARGET</span><strong id="targetValue">—</strong></div>
+          <div><span>FORWARD</span><strong id="forwardValue">—</strong></div>
+          <div><span>RIGHT</span><strong id="rightValue">—</strong></div>
+        </div>
+      </div>
+      <div class="box settings">
+        <label>HEIGHT (m)<input id="targetHeight" type="number" min="0.3" max="2.0" step="0.1" value="0.3"></label>
+        <label>GO (m)<input id="goDistance" type="number" min="0.1" max="5.0" step="0.1" value="2.0"></label>
+        <label>SPEED (m/s)<input id="keySpeed" type="number" min="0.1" max="0.6" step="0.05" value="0.3"></label>
+      </div>
+      {% else %}
+      <div class="box">
+        <div class="row"><strong>HEIGHT:</strong> 1 m target is timed, not measured</div>
+        <div class="row"><strong>GO:</strong> vendor forward command; optical mode required</div>
+        <div class="row"><strong>STOP:</strong> centred command; position hold requires optical mode</div>
+        <div class="row"><strong>LAND:</strong> powered descent</div>
+      </div>
+      {% endif %}
+    </div>
+    <div class="col col-view">
+      {% if assisted %}
+      <section class="box eyes" aria-labelledby="eyesHeading">
+        <div class="panel-head">
+          <h2 id="eyesHeading">EYES</h2>
+          <span id="eyesState" class="eeg-caption"></span>
+        </div>
+        <div class="eye-grid">
+          {% for n in range(2) %}
+          <figure class="eye">
+            <img id="eyeImage{{ n }}" alt="Eye camera {{ n + 1 }}, measured pupil outlined" width="640" height="480">
+            <figcaption>
+              <span class="eye-tools"><button type="button" class="mini" data-eye="{{ n }}" data-by="-90" aria-label="Turn eye {{ n + 1 }} picture left">⟲</button><button type="button" class="mini" data-eye="{{ n }}" data-by="90" aria-label="Turn eye {{ n + 1 }} picture right">⟳</button></span>
+              <strong>EYE {{ n + 1 }}</strong> <span id="eyePupil{{ n }}">—</span>
+            </figcaption>
+          </figure>
+          {% endfor %}
+        </div>
+      </section>
+      <section class="box steer" aria-labelledby="steerHeading">
+        <div class="panel-head">
+          <h2 id="steerHeading">DIRECTION</h2>
+          <strong id="commandNow" class="command-now" aria-live="polite">HOVER</strong>
+        </div>
+        <div class="steer-grid">
+          <svg id="headingDial" viewBox="-60 -60 120 120" role="img" aria-label="Head heading (dashed) and drone heading (solid)">
+            <circle r="52" fill="none" stroke="#000" stroke-width="2"></circle>
+            <line x1="0" y1="-52" x2="0" y2="-44" stroke="#000" stroke-width="2"></line>
+            <line x1="52" y1="0" x2="45" y2="0" stroke="#000" stroke-width="1"></line>
+            <line x1="-52" y1="0" x2="-45" y2="0" stroke="#000" stroke-width="1"></line>
+            <line id="droneNeedle" x1="0" y1="0" x2="0" y2="-42" stroke="#000" stroke-width="5" stroke-linecap="round"></line>
+            <line id="headNeedle" x1="0" y1="0" x2="0" y2="-50" stroke="#000" stroke-width="2" stroke-dasharray="4 3"></line>
+            <circle r="4" fill="#000"></circle>
+          </svg>
+          <div class="steer-readout">
+            <div><span>HEAD</span><strong id="headOffset">—</strong></div>
+            <div><span>DRONE</span><strong id="droneOffset">—</strong></div>
+            <div><span>TURN</span><strong id="turnRate">—</strong></div>
+            <div><span>BRAIN</span><strong id="brainGo">—</strong></div>
+          </div>
+        </div>
+        <div class="head-row">
+          <label class="confirm"><input id="headFollow" type="checkbox" checked><span>HEAD STEERING</span></label>
+          <button id="recenterHead" type="button" class="mini">RECENTER <kbd>C</kbd></button>
+        </div>
+        <div class="keys" aria-label="Keys">
+          <span><kbd data-key="w">W</kbd><kbd data-key="a">A</kbd><kbd data-key="s">S</kbd><kbd data-key="d">D</kbd> move</span>
+          <span><kbd data-key="arrowup">↑</kbd><kbd data-key="arrowdown">↓</kbd> height</span>
+          <span><kbd data-key="arrowleft">←</kbd><kbd data-key="arrowright">→</kbd> turn</span>
+          <span><kbd data-key=" ">SPACE</kbd> hover</span>
+          <span><kbd data-key="l">L</kbd> land</span>
+        </div>
+      </section>
+      {% endif %}
+    </div>
+    <div class="col col-brain">
+      <section class="box" aria-labelledby="eegHeading">
+        <div class="eeg-header">
+          <h2 id="eegHeading">EEG · <span id="eegState">WAITING</span></h2>
+          <div class="eeg-actions">
+            <button id="eegConnectButton" type="button">CONNECT</button>
+            <button id="eegDisconnectButton" type="button" hidden>DISCONNECT</button>
+          </div>
+        </div>
+        {% for channel in range(1, 5) %}
+        <div class="eeg-channel">
+          <strong>CH{{ channel }}</strong>
+          <canvas id="eegChannel{{ channel }}" role="img" aria-label="Live EEG channel {{ channel }}, in microvolts">Waiting for EEG channel {{ channel }}</canvas>
+        </div>
+        {% endfor %}
+      </section>
+      <section class="box" aria-labelledby="eegPredictionHeading">
+        <div class="confidence-head">
+          <h2 id="eegPredictionHeading">STOP / GO</h2>
+          <span id="eegDecision" aria-live="polite">—</span>
+        </div>
+        <div class="row model-row">
+          <strong>MODEL</strong>
+          <span id="eegModelName">{% if eeg_state.model_selection == 'auto' %}AUTO · BEST{% else %}SAVED{% endif %}</span>
+        </div>
+        <div class="confidence-bars" id="confidenceBars">
+          <div>
+            <div class="confidence-label"><strong id="firstConfidenceLabel">STOP</strong><span id="stopConfidence">—</span></div>
+            <div id="stopConfidenceMeter" class="confidence-track" role="meter" aria-label="STOP model confidence" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="Confidence unavailable"><div id="stopConfidenceFill" class="confidence-fill"></div></div>
+          </div>
+          <div>
+            <div class="confidence-label"><strong id="secondConfidenceLabel">GO</strong><span id="goConfidence">—</span></div>
+            <div id="goConfidenceMeter" class="confidence-track" role="meter" aria-label="GO model confidence" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="Confidence unavailable"><div id="goConfidenceFill" class="confidence-fill"></div></div>
+          </div>
+        </div>
+        <div class="confidence-bars" id="extraConfidence" hidden></div>
+        <p id="modelScore" hidden>Model score: <span id="modelScoreValue">—</span></p>
+        <div class="row">
+          <div class="threshold-head">
+            <label for="stopThreshold"><strong>STOP AT</strong></label>
+            <span><input id="stopThresholdNumber" type="number" min="1" max="99" step="1" value="{{ (eeg_state.stop_threshold * 100) | round | int }}" aria-label="STOP threshold percentage"> %</span>
+          </div>
+          <input id="stopThreshold" type="range" min="1" max="99" step="1" value="{{ (eeg_state.stop_threshold * 100) | round | int }}" aria-label="STOP confidence threshold">
+        </div>
+        <p id="eegPredictionNote" role="status"></p>
+        <div class="row">
+          <label class="confirm"><input id="brainControlRequested" type="checkbox"><span>BRAIN CONTROL</span></label>
+        </div>
+      </section>
+    </div>
+  </main>
+  {% include "goggle_panel.html" ignore missing %}
+
+  <script>
+    const CONTROL_TOKEN = {{ control_token | tojson }};
+    const FLIGHT_READY = {{ flight_ready | tojson }};
+    let CONTROL_READY = {{ controls_ready | tojson }};
+    const ASSISTED = {{ assisted | tojson }};
+    const keysDown = new Set();
+    let targetHeightMm = 300;
+    const flightConfirmed = document.getElementById('flightConfirmed');
+    const armButton = document.getElementById('armButton');
+    const goButton = document.getElementById('goButton');
+    const stopButton = document.getElementById('stopButton');
+    const landButton = document.getElementById('landButton');
+    const emergencyButton = document.getElementById('emergencyButton');
+    const statusText = document.getElementById('statusText');
+    let mode = 'DISARMED';
+    let sequence = 0;
+    let failed = false;
+    let brainBusy = false;
+    let brainEEGReady = false;
+    let brainModelStopGo = {{ eeg_state.selected_model.stop_go | tojson }};
+    let brainState = {{ eeg_state.brain_control | tojson }};
+
+    function showBrainControl(state) {
+      if (state) brainState = state;
+      const checkbox = document.getElementById('brainControlRequested');
+      if (!brainBusy) checkbox.checked = Boolean(brainState.enabled);
+      checkbox.disabled = brainBusy || failed || !CONTROL_READY || !brainModelStopGo
+        || !(ASSISTED ? ['DISARMED', 'TAKING_OFF', 'HOVERING', 'FORWARD'] : ['HOVERING', 'FORWARD']).includes(mode)
+        || (!brainEEGReady && !brainState.enabled);
+    }
+
+    function headers() {
+      return {'Content-Type': 'application/json', 'X-Flight-Token': CONTROL_TOKEN};
+    }
+
+    async function post(path, body = {}, keepalive = false) {
+      const response = await fetch(path, {
+        method: 'POST',
+        headers: headers(),
+        body: JSON.stringify(body),
+        cache: 'no-store',
+        keepalive,
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.message || 'Control failed');
+      return payload;
+    }
+
+    function metres(mm) {
+      return (typeof mm === 'number') ? (mm / 1000).toFixed(2) + ' m' : '—';
+    }
+
+    function showTelemetry(state) {
+      if (!ASSISTED) return;
+      const t = state.telemetry;
+      document.getElementById('heightValue').textContent = t ? metres(t.height_mm) : '—';
+      document.getElementById('targetValue').textContent = metres(state.target_height_mm);
+      document.getElementById('forwardValue').textContent = t ? metres(t.moved_forward_mm) : '—';
+      document.getElementById('rightValue').textContent = t ? metres(t.moved_right_mm) : '—';
+      const fault = state.fault !== 'NONE' ? state.fault : '';
+      document.getElementById('faultText').textContent = fault ? `${fault}: ${state.fault_help}` : '';
+    }
+
+    function showState(state) {
+      mode = state.mode || 'DISARMED';
+      if (ASSISTED) CONTROL_READY = Boolean(state.control_ready);
+      statusText.textContent = CONTROL_READY ? mode
+        : !ASSISTED ? 'LOCKED' : 'LOCKED · ' + (state.connected ? (state.flight_blocker || 'NOT READY') : 'NO DRONE');
+      flightConfirmed.disabled = !CONTROL_READY;
+      showTelemetry(state);
+      const hovering = mode === 'HOVERING';
+      const forward = mode === 'FORWARD';
+      const airborne = hovering || forward || mode === 'TAKING_OFF';
+      armButton.disabled = !CONTROL_READY || failed || mode !== 'DISARMED' || !flightConfirmed.checked;
+      goButton.disabled = failed || !hovering;
+      stopButton.disabled = failed || !(forward || hovering);
+      landButton.disabled = failed || !(airborne || mode === 'LANDING');  // LAND stays live during any landing
+      showBrainControl(state.brain_control);
+    }
+
+    flightConfirmed.addEventListener('change', () => {
+      armButton.disabled = !CONTROL_READY || failed || mode !== 'DISARMED' || !flightConfirmed.checked;
+    });
+
+    function failToLanding() {
+      failed = true;
+      mode = 'LANDING';
+      statusText.textContent = 'LINK ERROR — LANDING REQUESTED';
+      armButton.disabled = true;
+      goButton.disabled = true;
+      stopButton.disabled = true;
+      landButton.disabled = true;
+      showBrainControl({enabled: false, message: 'Brain control off · browser connection lost'});
+      post('/api/land', {sequence: ++sequence}, true).catch(() => {});
+    }
+
+    async function command(path, extra = {}) {
+      if (failed) return;
+      try {
+        showState(await post(path, {sequence: ++sequence, ...extra}));
+      } catch (error) {
+        if (ASSISTED && mode === 'DISARMED') {
+          statusText.textContent = 'REFUSED · ' + error.message;  // nothing is flying
+          return;
+        }
+        failToLanding();
+      }
+    }
+
+    function setting(id, fallback, low, high) {
+      const value = Number(document.getElementById(id)?.value);
+      return Number.isFinite(value) ? Math.min(high, Math.max(low, value)) : fallback;
+    }
+
+    armButton.addEventListener('click', () => {
+      targetHeightMm = Math.round(setting('targetHeight', 0.3, 0.3, 2.0) * 1000);
+      command('/api/arm', {target_mm: targetHeightMm});
+    });
+    goButton.addEventListener('click', () => command('/api/go', {distance_mm: Math.round(setting('goDistance', 2.0, 0.1, 5.0) * 1000)}));
+    stopButton.addEventListener('click', () => command('/api/stop'));
+    landButton.addEventListener('click', () => command('/api/land'));
+    emergencyButton.addEventListener('click', async () => {
+      try {
+        showState(await post('/api/emergency-lock', {}, true));
+      } catch (_error) {
+        failed = true;
+        statusText.textContent = 'EMERGENCY COMMAND UNCONFIRMED';
+      }
+    });
+
+    function requestLanding() {
+      if (mode !== 'DISARMED') {
+        mode = 'LANDING';
+        post('/api/land', {sequence: ++sequence}, true).catch(() => {});
+      }
+    }
+    window.addEventListener('pagehide', requestLanding);
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) requestLanding();
+    });
+
+    const KEY_NAMES = new Set(['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' ', 'l', 'c']);
+    const TURN_DEG_S = 45;
+    const TYPING_INPUTS = new Set(['text', 'search', 'email', 'password', 'url', 'tel']);
+    // True while typing into a field. Boxes, sliders and number fields keep the flight keys
+    // (a number field only keeps ↑ / ↓ to step its value), so SPACE and L always work.
+    function editingField(event) {
+      const target = event.target;
+      if (!target) return false;
+      if (['SELECT', 'TEXTAREA'].includes(target.tagName) || target.isContentEditable) return true;
+      if (target.tagName !== 'INPUT') return false;
+      if (target.type === 'number') return ['arrowup', 'arrowdown'].includes(event.key.toLowerCase());
+      return TYPING_INPUTS.has(target.type);
+    }
+    function markKey(key, down) {
+      document.querySelectorAll(`kbd[data-key="${CSS.escape(key)}"]`).forEach((el) => el.classList.toggle('down', down));
+    }
+    const headFollow = document.getElementById('headFollow');
+    // head steering is on by default; C re-centres it
+    if (ASSISTED && headFollow?.checked) post('/api/head', {enabled: true}).catch(() => { headFollow.checked = false; });
+    async function recenterHead() {
+      try {
+        await post('/api/head/recenter');
+        if (headFollow) headFollow.checked = true;
+      } catch (error) {
+        statusText.textContent = 'RECENTER REFUSED · ' + error.message;
+      }
+    }
+    document.getElementById('recenterHead')?.addEventListener('click', recenterHead);
+    headFollow?.addEventListener('change', async (event) => {
+      try {
+        showState(await post('/api/head', {enabled: event.target.checked}));
+      } catch (error) {
+        event.target.checked = false;
+        statusText.textContent = 'HEAD STEERING REFUSED · ' + error.message;
+      }
+    });
+    function nudgeHeight(deltaMm) {
+      targetHeightMm = Math.min(2000, Math.max(300, targetHeightMm + deltaMm));
+      const input = document.getElementById('targetHeight');
+      if (input) input.value = (targetHeightMm / 1000).toFixed(1);
+    }
+    if (ASSISTED) {
+      window.addEventListener('keydown', (event) => {
+        const key = event.key.toLowerCase();
+        if (!KEY_NAMES.has(key) || editingField(event) || event.metaKey || event.ctrlKey) return;
+        event.preventDefault();
+        markKey(key, true);
+        if (key === 'arrowup') { if (!event.repeat) nudgeHeight(100); }  // 10 cm per press, key repeat ignored
+        else if (key === 'arrowdown') { if (!event.repeat) nudgeHeight(-100); }
+        else if (key === ' ') { if (!event.repeat && !stopButton.disabled) command('/api/stop'); }
+        else if (key === 'l') { if (!event.repeat && !landButton.disabled) command('/api/land'); }
+        else if (key === 'c') { if (!event.repeat) recenterHead(); }
+        else keysDown.add(key);
+      });
+      window.addEventListener('keyup', (event) => {
+        const key = event.key.toLowerCase();
+        keysDown.delete(key);
+        markKey(key, false);
+        // SPACE / L must not also press a focused button or tick a focused box
+        if (KEY_NAMES.has(key) && !editingField(event)) event.preventDefault();
+      });
+      // Enter or Esc in a number field lets go of the keyboard, so ↑ / ↓ fly again
+      document.querySelectorAll('input[type="number"]').forEach((input) => input.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === 'Escape') input.blur();
+      }));
+      window.addEventListener('blur', () => {
+        keysDown.clear();
+        document.querySelectorAll('kbd.down').forEach((el) => el.classList.remove('down'));
+      });
+    }
+
+    document.getElementById('targetHeight')?.addEventListener('change', () => {
+      targetHeightMm = Math.round(setting('targetHeight', 0.3, 0.3, 2.0) * 1000);
+    });
+
+    function motion() {
+      if (!ASSISTED) return {};
+      const speed = Math.round(setting('keySpeed', 0.3, 0.1, 0.6) * 1000);
+      const axis = (plus, minus) => (keysDown.has(plus) ? 1 : 0) - (keysDown.has(minus) ? 1 : 0);
+      return {forward: axis('w', 's') * speed, right: axis('d', 'a') * speed,
+              yaw: axis('arrowright', 'arrowleft') * TURN_DEG_S, target_mm: targetHeightMm};
+    }
+
+    async function heartbeat() {
+      if (document.hidden || failed) return;
+      try {
+        showState(await post('/api/heartbeat', motion()));
+      } catch (error) {
+        if (ASSISTED && mode === 'DISARMED') {  // on the ground: retry
+          statusText.textContent = 'WEBSITE NOT ANSWERING';
+          return;
+        }
+        failToLanding();
+      }
+    }
+    heartbeat();
+    setInterval(heartbeat, 80);
+  </script>
+  <script>
+    const eegCanvases = [1, 2, 3, 4].map(channel => document.getElementById(`eegChannel${channel}`));
+    const eegButton = document.getElementById('eegConnectButton');
+    const eegDisconnectButton = document.getElementById('eegDisconnectButton');
+    const EEG_MODELS = {{ eeg_models | tojson }};
+    const brainControlRequested = document.getElementById('brainControlRequested');
+    const thresholdSlider = document.getElementById('stopThreshold');
+    const thresholdNumber = document.getElementById('stopThresholdNumber');
+    let eegEnabled = false;
+    let eegBusy = false;
+    let lastEEGResponse = performance.now();
+    let lastEEGData = null;
+    let thresholdWanted = Math.round({{ eeg_state.stop_threshold | tojson }} * 100);
+    let thresholdSaved = thresholdWanted;
+    let thresholdTimer = null;
+    let thresholdSaving = false;
+    let modelWanted = {{ eeg_state.model_id | tojson }};
+    let displayedModel = null;
+    let confidenceLabels = ['STOP', 'GO'];
+    let extraMeters = [];
+
+    function configureModel(model) {
+      if (!model || displayedModel === model.id) return;
+      displayedModel = model.id;
+      const scoreOnly = model.kind === 'stop-only';
+      confidenceLabels = model.stop_go ? ['STOP', 'GO'] : model.class_names;
+      document.getElementById('eegPredictionHeading').textContent = scoreOnly ? 'SCORE' : model.stop_go ? 'STOP / GO' : 'BRAIN';
+      document.getElementById('confidenceBars').hidden = scoreOnly;
+      document.getElementById('modelScore').hidden = !scoreOnly;
+      document.getElementById('firstConfidenceLabel').textContent = confidenceLabels[0] || '';
+      document.getElementById('secondConfidenceLabel').textContent = confidenceLabels[1] || '';
+      const extra = document.getElementById('extraConfidence');
+      extra.replaceChildren();
+      extraMeters = confidenceLabels.slice(2).map(label => {
+        const cell = document.createElement('div');
+        const caption = document.createElement('div'); caption.className = 'confidence-label';
+        const title = document.createElement('strong'); title.textContent = label;
+        const value = document.createElement('span'); value.textContent = '—';
+        caption.append(title, value);
+        const meter = document.createElement('div'); meter.className = 'confidence-track';
+        meter.setAttribute('role', 'meter'); meter.setAttribute('aria-label', `${label} model confidence`);
+        meter.setAttribute('aria-valuemin', '0'); meter.setAttribute('aria-valuemax', '100');
+        const fill = document.createElement('div'); fill.className = 'confidence-fill'; meter.append(fill);
+        cell.append(caption, meter); extra.append(cell);
+        return {label, value, fill, meter};
+      });
+      extra.hidden = scoreOnly || extraMeters.length === 0;
+      thresholdSlider.disabled = !model.stop_go;
+      thresholdNumber.disabled = !model.stop_go;
+      brainModelStopGo = model.stop_go;
+      showBrainControl();
+      clearEEGConfidence('');
+    }
+
+    brainControlRequested.addEventListener('change', async () => {
+      const enabled = brainControlRequested.checked;
+      brainBusy = true;
+      brainControlRequested.disabled = true;
+      try {
+        heldNoteUntil = 0;  // an earlier refusal no longer applies
+        showEEG(await eegRequest('/api/eeg/control', {enabled}));
+      }
+      catch (error) {
+        brainState = {enabled: false, message: error.message};
+        showNote(error.message, 5000);  // why it was refused
+      }
+      finally { brainBusy = false; showBrainControl(); }
+    });
+
+    function drawEEG(channels = [[], [], [], []]) {
+      eegCanvases.forEach((canvas, channel) => {
+        const width = Math.max(1, Math.min(2048, canvas.parentElement.clientWidth - 54));
+        const height = 58;
+        const ratio = Math.min(window.devicePixelRatio || 1, 3);
+        canvas.width = Math.round(width * ratio);
+        canvas.height = Math.round(height * ratio);
+        const context = canvas.getContext('2d');
+        context.scale(ratio, ratio);
+        context.fillStyle = '#fff';
+        context.fillRect(0, 0, width, height);
+        const samples = channels[channel] || [];
+        context.font = '12px Arial';
+        if (samples.length < 2) {
+          context.fillStyle = '#000';
+          context.fillText('—', 8, 33);
+          return;
+        }
+        const sorted = [...samples].sort((a, b) => a - b);
+        const center = sorted[Math.floor(sorted.length / 2)];
+        const deviations = samples.map(value => Math.abs(value - center)).sort((a, b) => a - b);
+        const scale = Math.max(25, Math.ceil(deviations[Math.floor(deviations.length * 0.99)] / 5) * 5);
+        context.strokeStyle = '#ccc';
+        context.lineWidth = 1;
+        context.beginPath();
+        context.moveTo(0, height / 2);
+        context.lineTo(width, height / 2);
+        context.stroke();
+        context.strokeStyle = '#000';
+        context.lineWidth = 1.1;
+        context.beginPath();
+        samples.forEach((value, index) => {
+          const x = width * (1000 - samples.length + index) / 999;
+          const y = height / 2 - (value - center) * (height / 2 - 7) / scale;
+          if (index) context.lineTo(x, y); else context.moveTo(x, y);
+        });
+        context.stroke();
+        context.fillStyle = '#fff';
+        context.fillRect(width - 85, 0, 85, 17);
+        context.fillStyle = '#000';
+        context.textAlign = 'right';
+        context.fillText(`±${scale} µV`, width - 3, 13);
+      });
+    }
+
+    let heldNote = '';
+    let heldNoteUntil = 0;
+    function showNote(text, holdMs = 0) {  // a held note (e.g. why BRAIN CONTROL was refused) stays a few seconds
+      if (holdMs) { heldNote = text; heldNoteUntil = performance.now() + holdMs; }
+      document.getElementById('eegPredictionNote').textContent = performance.now() < heldNoteUntil ? heldNote : text;
+    }
+
+    function clearEEGConfidence(reason = '') {
+      document.getElementById('eegDecision').textContent = '—';
+      ['stop', 'go'].forEach(name => {
+        document.getElementById(`${name}Confidence`).textContent = '—';
+        document.getElementById(`${name}ConfidenceFill`).style.width = '0%';
+        document.getElementById(`${name}ConfidenceMeter`).setAttribute('aria-valuenow', '0');
+        document.getElementById(`${name}ConfidenceMeter`).setAttribute('aria-valuetext', 'Confidence unavailable');
+      });
+      extraMeters.forEach(({value, fill, meter}) => {
+        value.textContent = '—'; fill.style.width = '0%';
+        meter.setAttribute('aria-valuenow', '0'); meter.setAttribute('aria-valuetext', 'Confidence unavailable');
+      });
+      document.getElementById('modelScoreValue').textContent = '—';
+      showNote(reason);
+    }
+
+    function showEEG(data) {
+      lastEEGResponse = performance.now();
+      lastEEGData = data;
+      eegEnabled = Boolean(data.enabled);
+      eegButton.disabled = eegBusy || eegEnabled;
+      eegDisconnectButton.hidden = !eegEnabled;
+      eegDisconnectButton.disabled = eegBusy;
+      document.getElementById('eegState').textContent = data.state === 'streaming' ? 'LIVE' : data.state.toUpperCase();
+      document.getElementById('eegModelName').textContent = data.model_selection === 'auto' ? 'AUTO · BEST' : 'SAVED';
+      drawEEG(data.eeg);
+      modelWanted = data.model_id;
+      configureModel(data.selected_model);
+      if (!thresholdSaving && thresholdTimer === null && document.activeElement !== thresholdSlider && document.activeElement !== thresholdNumber) {
+        thresholdSaved = Math.round(data.stop_threshold * 100);
+        thresholdWanted = thresholdSaved;
+        thresholdSlider.value = thresholdWanted;
+        thresholdNumber.value = thresholdWanted;
+      }
+      const prediction = data.prediction || {};
+      brainEEGReady = Boolean(prediction.valid && data.state === 'streaming' && data.selected_model.stop_go);
+      showBrainControl(data.brain_control);
+      if (!prediction.valid || data.model_id !== modelWanted || (data.selected_model.stop_go && Math.round(data.stop_threshold * 100) !== thresholdWanted)) {
+        clearEEGConfidence('');
+        return;
+      }
+      if (prediction.output_kind === 'score') {
+        document.getElementById('modelScoreValue').textContent = prediction.score.toFixed(3);
+        document.getElementById('eegDecision').textContent = '';
+        showNote('');
+        return;
+      }
+      document.getElementById('eegDecision').textContent = prediction.decision;
+      const probabilities = prediction.probabilities || {STOP: prediction.stop_probability, GO: prediction.go_probability};
+      [['stop', confidenceLabels[0]], ['go', confidenceLabels[1]]].forEach(([name, label]) => {
+        const probability = probabilities[label];
+        const percentage = probability * 100;
+        document.getElementById(`${name}Confidence`).textContent = `${percentage.toFixed(1)}%`;
+        document.getElementById(`${name}ConfidenceFill`).style.width = `${percentage}%`;
+        document.getElementById(`${name}ConfidenceMeter`).setAttribute('aria-valuenow', percentage.toFixed(1));
+        document.getElementById(`${name}ConfidenceMeter`).setAttribute('aria-valuetext', `${percentage.toFixed(1)}% model confidence`);
+        document.getElementById(`${name}ConfidenceMeter`).setAttribute('aria-label', `${label} model confidence`);
+      });
+      extraMeters.forEach(({label, value, fill, meter}) => {
+        const percentage = probabilities[label] * 100;
+        value.textContent = `${percentage.toFixed(1)}%`; fill.style.width = `${percentage}%`;
+        meter.setAttribute('aria-valuenow', percentage.toFixed(1)); meter.setAttribute('aria-valuetext', `${percentage.toFixed(1)}% model confidence`);
+      });
+      showNote(prediction.quality === 'moderate' ? 'WEAK SIGNAL' : '');
+    }
+
+    async function eegRequest(path, body) {
+      const abort = new AbortController();
+      const timeout = setTimeout(() => abort.abort(), 1500);
+      try {
+        const options = {headers: headers(), cache: 'no-store', signal: abort.signal};
+        if (body !== undefined) { options.method = 'POST'; options.body = JSON.stringify(body); }
+        const response = await fetch(path, options);
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.message || 'EEG connection unavailable');
+        return data;
+      } finally { clearTimeout(timeout); }
+    }
+
+    async function connectEEG() {
+      if (eegBusy) return;
+      eegBusy = true;
+      eegButton.disabled = true;
+      try { showEEG(await eegRequest('/api/eeg/connect', {})); }
+      catch (error) { clearEEGConfidence(error.message); }
+      finally { eegBusy = false; eegButton.disabled = eegEnabled; eegDisconnectButton.disabled = false; }
+    }
+
+    eegButton.addEventListener('click', connectEEG);
+    eegDisconnectButton.addEventListener('click', async () => {
+      if (eegBusy) return;
+      eegBusy = true;
+      eegButton.disabled = true;
+      eegDisconnectButton.disabled = true;
+      try { showEEG(await eegRequest('/api/eeg/disconnect', {})); }
+      catch (error) { clearEEGConfidence(error.message); }
+      finally { eegBusy = false; eegButton.disabled = eegEnabled; eegDisconnectButton.disabled = false; }
+    });
+
+
+    async function saveThreshold() {
+      thresholdTimer = null;
+      if (thresholdSaving) return;
+      thresholdSaving = true;
+      const submitted = thresholdWanted;
+      try {
+        const state = await eegRequest('/api/eeg/threshold', {threshold: submitted / 100});
+        thresholdSaved = Math.round(state.stop_threshold * 100);
+        if (submitted === thresholdWanted) showEEG(state);
+      } catch (error) {
+        thresholdWanted = thresholdSaved;
+        thresholdSlider.value = thresholdSaved;
+        thresholdNumber.value = thresholdSaved;
+        clearEEGConfidence(error.message);
+      } finally {
+        thresholdSaving = false;
+        if (thresholdWanted !== thresholdSaved) saveThreshold();
+      }
+    }
+
+    function changeThreshold(value) {
+      if (!Number.isInteger(value) || value < 1 || value > 99) return;
+      thresholdWanted = value;
+      thresholdSlider.value = value;
+      thresholdNumber.value = value;
+      thresholdSlider.setAttribute('aria-valuetext', `${value}% STOP confidence`);
+      clearEEGConfidence('');
+      clearTimeout(thresholdTimer);
+      thresholdTimer = setTimeout(saveThreshold, 150);
+    }
+    thresholdSlider.addEventListener('input', () => changeThreshold(Number(thresholdSlider.value)));
+    thresholdNumber.addEventListener('input', () => changeThreshold(Number(thresholdNumber.value)));
+    thresholdNumber.addEventListener('change', () => {
+      const value = Number(thresholdNumber.value);
+      if (!Number.isInteger(value) || value < 1 || value > 99) thresholdNumber.value = thresholdWanted;
+    });
+
+    async function pollEEG() {
+      if (!document.hidden) {
+        try { showEEG(await eegRequest('/api/eeg')); }
+        catch (error) {
+          drawEEG();
+          clearEEGConfidence(error.message);
+          document.getElementById('eegState').textContent = 'WAITING';
+        }
+      }
+      setTimeout(pollEEG, document.hidden ? 1000 : 200);
+    }
+    setInterval(() => {
+      if (performance.now() - lastEEGResponse > 1000) {
+        drawEEG();
+        clearEEGConfidence('');
+      }
+    }, 200);
+    window.addEventListener('resize', () => drawEEG(lastEEGData?.eeg));
+    drawEEG();
+    configureModel(EEG_MODELS.find(model => model.id === modelWanted));
+    showBrainControl();
+    pollEEG();
+  </script>
+  <script id="dashboardFeeds">
+    // eye cameras and heading dial (read-only)
+    (() => {
+      if (!ASSISTED) return;
+      const $ = (id) => document.getElementById(id);
+      const signed = (deg) => deg === null || deg === undefined ? '—' : `${deg > 0 ? '+' : ''}${Math.round(deg)}°`;
+      async function getJson(path) {
+        const response = await fetch(path, {cache: 'no-store'});
+        if (!response.ok) throw new Error(String(response.status));
+        return response.json();
+      }
+      async function refreshEyes() {
+        try {
+          const {eyes} = await getJson('/api/eyes');
+          const plugged = eyes.filter((eye) => eye.device);
+          $('eyesState').textContent = !plugged.length ? 'NOT PLUGGED IN' : '';
+          eyes.slice(0, 2).forEach((eye, n) => {
+            const img = $(`eyeImage${n}`);
+            if (img && !img.getAttribute('src')) img.src = `/eyes/${n}.mjpg`;
+            $(`eyePupil${n}`).textContent = eye.error ? eye.error.toUpperCase()
+              : eye.detected ? `Ø ${eye.diameter_px} px` : 'NO PUPIL';
+          });
+        } catch (_error) {
+          $('eyesState').textContent = 'NOT ANSWERING';
+        }
+      }
+      function keyCommand() {
+        const held = ['w', 's', 'a', 'd', 'arrowleft', 'arrowright'].filter((k) => keysDown.has(k));
+        const names = {w: 'FORWARD', s: 'BACK', a: 'LEFT', d: 'RIGHT', arrowleft: 'TURN LEFT', arrowright: 'TURN RIGHT'};
+        return held.map((k) => names[k]).join(' + ');
+      }
+      async function refreshDirection() {
+        try {
+          const d = await getJson('/api/direction');
+          $('headOffset').textContent = d.head_sensor ? (d.head_on ? signed(d.head_offset) : 'OFF') : 'NO SENSOR';
+          $('droneOffset').textContent = signed(d.drone_offset);
+          $('turnRate').textContent = d.turn_rate ? `${d.turn_rate > 0 ? 'R' : 'L'} ${Math.abs(d.turn_rate)}°/s` : 'NONE';
+          $('brainGo').textContent = d.brain_go ? 'GO' : '—';
+          $('headNeedle').setAttribute('transform', `rotate(${d.head_offset || 0})`);
+          $('droneNeedle').setAttribute('transform', `rotate(${d.drone_offset || 0})`);
+          const keys = keyCommand();
+          $('commandNow').textContent = keys || (d.brain_go ? 'BRAIN GO'
+            : d.turn_rate ? `HEAD TURN ${d.turn_rate > 0 ? 'RIGHT' : 'LEFT'}` : 'HOVER');
+        } catch (_error) {
+          $('commandNow').textContent = keyCommand() || '—';
+        }
+      }
+      document.querySelector('.eye-grid')?.addEventListener('click', async (event) => {
+        const button = event.target.closest('button[data-eye]');
+        if (!button) return;
+        await fetch(`/api/eyes/${button.dataset.eye}/rotate`, {method: 'POST', headers: {'Content-Type': 'application/json'},
+                                                               body: JSON.stringify({by: Number(button.dataset.by)})});
+        refreshEyes();
+      });
+      refreshEyes();
+      setInterval(refreshEyes, 700);
+      refreshDirection();
+      setInterval(refreshDirection, 250);
+    })();
+  </script>
+  <script>
+    // connection lights (read-only)
+    (() => {
+      const SHORT = {radio: 'RADIO', drone: 'DRONE', battery: 'BATTERY', controller: 'FC', laser: 'LASER',
+                     floor: 'FLOOR CAM', head: 'HEAD', eyes: 'EYES', eeg: 'EEG'};
+      const box = document.getElementById('links');
+      const fix = document.getElementById('linkFix');
+      function chip(text, level, title, extra) {
+        const el = document.createElement('span');
+        el.className = 'link' + (extra ? ' ' + extra : '');
+        el.dataset.level = level;
+        el.title = title;
+        el.append(document.createElement('i'), text);
+        return el;
+      }
+      function label(check) {
+        const volts = check.key === 'battery' && /^([\d.]+) V/.exec(check.detail);
+        return volts ? `BATT ${volts[1]} V` : SHORT[check.key];
+      }
+      async function refreshLinks() {
+        try {
+          const response = await fetch('/api/checkup', {cache: 'no-store'});
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const data = await response.json();
+          const shown = data.checks.filter((check) => SHORT[check.key]);
+          const chips = shown.map((check) => chip(label(check), check.level,
+            `${check.label}: ${check.detail}${check.fix ? ' → ' + check.fix : ''}`));
+          if (data.app_recording) {
+            const s = data.app_recording.seconds;
+            chips.push(chip(`REC ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`, 'ok',
+              'The Drone App is recording this window and all drone data', 'rec'));
+          }
+          box.replaceChildren(...chips);
+          const problem = shown.find((check) => check.required && check.level === 'bad');
+          fix.textContent = problem ? `${problem.label}: ${problem.fix || problem.detail}` : '';
+        } catch (_error) {
+          box.replaceChildren(chip('WEBSITE NOT ANSWERING', 'bad', 'Restart the Drone App'));
+          fix.textContent = '';
+        }
+      }
+      refreshLinks();
+      setInterval(refreshLinks, 1000);
+    })();
+  </script>
+</body>
+</html>

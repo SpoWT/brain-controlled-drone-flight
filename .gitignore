@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.venv/
+output/
+outputs/
+models/
+eeg_bundles/
+eeg_recordings/
+web.log
+*.log
+.omc/
+.pytest_cache/
