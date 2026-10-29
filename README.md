@@ -25,6 +25,7 @@ and [docs/BCI_GAME.md](docs/BCI_GAME.md) for recording and training.
 | `drone_app/` | Windows desktop app: opens the page and records sessions |
 | `fc_scripts/always_land.lua` | Flight controller script (`/APM/scripts`) |
 | `windows/` | Laptop setup and maintenance scripts |
+| `hardware/` | Printed drone frames, goggles and head gear, and the parts list ([PARTS.md](hardware/PARTS.md)) |
 | `tests/` | Unit tests |
 
 ## Run
