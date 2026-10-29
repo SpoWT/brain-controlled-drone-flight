@@ -1,8 +1,17 @@
-# Installs the "DRONE APP" desktop icon and its scheduled tasks. App files: %USERPROFILE%\NeuralFlightWeb\drone_app
+# Installs the "DRONE APP" desktop icon and its scheduled tasks. App files: $env:USERPROFILE\NeuralFlightWeb\drone_app
+$ErrorActionPreference = "Stop"
 $app = "$env:USERPROFILE\NeuralFlightWeb\drone_app"
-$py = (Get-Command python).Source
+$audit = "$env:USERPROFILE\NeuralFlightAudit"
+foreach ($need in "$app\drone_app.pyw", "$app\make_icon.py", "$audit\key_flight_job.ps1") {
+    if (-not (Test-Path $need)) { throw "missing $need (see Windows setup in README.md)" }
+}
+$found = Get-Command python -ErrorAction SilentlyContinue
+if (-not $found) { throw "python is not on PATH" }
+$py = $found.Source
 $pyw = Join-Path (Split-Path $py) "pythonw.exe"
-python "$app\make_icon.py" "$app\drone.ico"
+if (-not (Test-Path $pyw)) { throw "pythonw.exe not found next to $py" }
+& $py "$app\make_icon.py" "$app\drone.ico"
+if ($LASTEXITCODE -ne 0) { throw "make_icon.py failed (exit $LASTEXITCODE)" }
 New-Item -ItemType Directory -Force "$env:USERPROFILE\Videos\Drone recordings" | Out-Null
 $shell = New-Object -ComObject WScript.Shell
 $path = Join-Path ([Environment]::GetFolderPath("Desktop")) "DRONE APP.lnk"
@@ -14,7 +23,6 @@ $link.IconLocation = "$app\drone.ico,0"
 $link.Description = "Flying page as an app: starts everything and records the whole session"
 $link.Save()
 # Elevated task: restart the website and reboot the FC, no browser page.
-$audit = "$env:USERPROFILE\NeuralFlightAudit"
 $elevated = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Highest
 $short = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
 $job = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$audit\key_flight_job.ps1`" -NoPage"

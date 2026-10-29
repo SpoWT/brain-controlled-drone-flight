@@ -73,7 +73,7 @@ not loaded. Restart the website after training.
 
 | Trigger | Action | Setting |
 |---|---|---|
-| No laptop heartbeat for 3 s | LAND | `FS_GCS_ENABLE 5`, `FS_GCS_TIMEOUT 3` |
+| No laptop heartbeat for 3 s (also sent only while the control loop runs without errors) | LAND | `FS_GCS_ENABLE 5`, `FS_GCS_TIMEOUT 3` |
 | Battery 21.6 V / 21.0 V | LAND | `BATT_FS_LOW_ACT 1`, `BATT_FS_CRT_ACT 1` |
 | Position estimate failing | LAND | `FS_EKF_ACTION 1` |
 | Crash detected | Motors off | `FS_CRASH_CHECK 1` |
@@ -98,7 +98,7 @@ Tilt, attitude and camera checks start 10 cm above the floor.
 | No key, moving faster than 0.4 m/s for 1.5 s | Level land | `WRONG_DIRECTION` |
 | Lean differs from the commanded lean by > 5.5° for 0.5 s | Level land | `TILT_MISMATCH` |
 | Lean ≥ 12° or estimated speed ≥ 0.8 m/s for 1.5 s | Level land | `RUNAWAY` |
-| Floor camera quality < 50 for 1.5 s | Level land | `FLOW_LOST` |
+| Floor camera quality < 50, or no floor camera data, for 1.5 s | Level land | `FLOW_LOST` |
 | No laser reading for 2 s | FC LAND | `LASER_LOST` |
 | Landing rises 0.4 m for 0.6 s | Motors off | |
 
@@ -165,7 +165,7 @@ Commands carry an increasing `sequence` number.
 | `CONFIG <scale_um> <axis>` | Optical-flow calibration |
 | `TAKEOFF <mm>` | Arm and climb to `<mm>` (300–2000) |
 | `FLY <mm> <fwd> <right> [<yaw>]` | Target height (mm), body speed (mm/s), turn (°/s). Sent every 0.05 s in flight |
-| `MOVE <fwd_mm> <right_mm>` | Measured move, then hold |
+| `MOVE <fwd_mm> <right_mm>` | Measured move along the heading at the start, then hold |
 | `HOLD` | Stop and hold position |
 | `LAND` | Gentle landing, else FC LAND |
 | `HEAD 0` / `HEAD 1` | Head steering off / on (on also re-centres) |

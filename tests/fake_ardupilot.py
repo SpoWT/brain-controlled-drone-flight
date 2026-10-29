@@ -94,6 +94,8 @@ class FakeArduPilot:
         self.stuck_horizontal = False  # LOITER sticks have no effect (cannot move where the keys say)
         self.external_tilt_deg = 0.0   # tilted by something else (tether pull, bump): not commanded
         self.yaw_deg = 0.0             # heading; the yaw stick turns it at PILOT_Y_RATE (202.5 deg/s full stick)
+        self.yaw_drift_deg_s = 0.0     # heading creeps on its own in the air (gyro drift, no compass)
+        self.flow_alive = True         # False: no OPTICAL_FLOW messages at all
         self._height_hist = []
         self._now = 0.0
 
@@ -144,7 +146,7 @@ class FakeArduPilot:
         self.height_m = max(0.02, self.height_m + rate * dt)
         airborne = self.armed and self.height_m > 0.05
         if airborne and self.mode in (2, 5):
-            self.yaw_deg += self.sticks[3] / 1000 * 202.5 * dt
+            self.yaw_deg += (self.sticks[3] / 1000 * 202.5 + self.yaw_drift_deg_s) * dt
         c, s = math.cos(math.radians(self.yaw_deg)), math.sin(math.radians(self.yaw_deg))
         if airborne and self.mode == 5:
             # LOITER: stick = desired speed in the drone's own frame (full stick 0.6 m/s); centred = brake, hold
@@ -195,9 +197,10 @@ class FakeArduPilot:
                Msg("NAV_CONTROLLER_OUTPUT", nav_roll=0.0, nav_pitch=self.runaway_pitch_deg if self.mode == 5 else 0.0),
                Msg("LOCAL_POSITION_NED", x=self.north, y=self.east, z=-self.height_m + self.ekf_z_bias,
                    vx=self.vn + self.ekf_speed_bias, vy=self.ve, vz=-self.vz),
-               Msg("OPTICAL_FLOW", quality=self.flow_quality),
                Msg("SERVO_OUTPUT_RAW", servo1_raw=pwm, servo2_raw=pwm, servo3_raw=pwm, servo4_raw=pwm),
                Msg("SYSTEM_TIME", time_boot_ms=123000)]
+        if self.flow_alive:
+            out.append(Msg("OPTICAL_FLOW", quality=self.flow_quality))
         if self.range_alive and self._now >= self.range_gap_until:
             seen = self.height_m
             for t, h in self._height_hist:

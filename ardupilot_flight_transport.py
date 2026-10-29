@@ -79,6 +79,18 @@ LANDING_PHASES = ("LAND", "FINAL_DESCENT", "EMERGENCY_DESCENT")
 GROUND_PHASES = ("IDLE", "LANDED", "FAULT")  # FAULT: motors cut
 
 
+def _to_body(north: float, east: float, yaw: float) -> tuple[float, float]:
+    """North/east -> (forward, right) for a drone pointing at yaw (radians)."""
+    c, s = math.cos(yaw), math.sin(yaw)
+    return c * north + s * east, -s * north + c * east
+
+
+def _to_ned(forward: float, right: float, yaw: float) -> tuple[float, float]:
+    """(forward, right) for a drone pointing at yaw -> north/east."""
+    c, s = math.cos(yaw), math.sin(yaw)
+    return c * forward - s * right, s * forward + c * right
+
+
 class ArduPilotFlightTransport(HeightPlanner, HeadSteering):
     """send(), telemetry(), status(), close() - same API as AssistedSerialTransport."""
 
@@ -227,12 +239,13 @@ class ArduPilotFlightTransport(HeightPlanner, HeadSteering):
     def _cmd_move(self, forward_mm: int, right_mm: int) -> None:
         if self._phase not in {"FLY", "MOVE"}:
             return
-        start = self._position_body()
-        if start is None:
+        start, yaw = self._position_ned(), self._yaw()
+        if start is None or yaw is None:
             self._fail("FLOW_LOST", land=False, hold=True)
             return
         distance = math.hypot(forward_mm, right_mm)
-        self._move = {"goal": (forward_mm, right_mm), "start": start,
+        # the goal is fixed on the floor at the start heading: a heading that drifts later does not bend it
+        self._move = {"goal": _to_ned(forward_mm, right_mm, yaw), "start": start, "yaw": yaw,
                       "deadline": self._clock() + distance / 100.0 + 8.0}  # assume >=0.1 m/s
         self._move_done = False
         self._velocity = (0, 0)
@@ -309,34 +322,34 @@ class ArduPilotFlightTransport(HeightPlanner, HeadSteering):
         att = self.link.latest("ATTITUDE", 0.8)
         if pos is None or att is None:
             return None, None
-        c, s = math.cos(att.yaw), math.sin(att.yaw)
-        north, east = pos.vx * 1000.0, pos.vy * 1000.0
-        return c * north + s * east, -s * north + c * east
+        return _to_body(pos.vx * 1000.0, pos.vy * 1000.0, att.yaw)
 
     def _flow(self):
         return self.link.latest("OPTICAL_FLOW", 1.0)
 
     def _camera_blind(self, now: float) -> bool:
-        """Floor camera quality below FLOW_MIN_QUALITY for FLOW_BLIND_S."""
+        """Floor camera quality below FLOW_MIN_QUALITY, or no floor camera news, for FLOW_BLIND_S."""
         flow = self.link.latest("OPTICAL_FLOW", 2.0)
-        if flow is None:
-            return False
-        if int(flow.quality) >= FLOW_MIN_QUALITY:
+        if flow is not None and int(flow.quality) >= FLOW_MIN_QUALITY:
             self._blind_since = None
             return False
         if self._blind_since is None:
             self._blind_since = now
         return now - self._blind_since >= FLOW_BLIND_S
 
+    def _position_ned(self) -> Optional[tuple[float, float]]:
+        """EKF position, mm (north, east)."""
+        pos = self.link.latest("LOCAL_POSITION_NED", 0.8)
+        return None if pos is None else (pos.x * 1000.0, pos.y * 1000.0)
+
+    def _yaw(self) -> Optional[float]:
+        att = self.link.latest("ATTITUDE", 0.8)
+        return None if att is None else float(att.yaw)
+
     def _position_body(self) -> Optional[tuple[float, float]]:
         """EKF position in the body frame, mm."""
-        pos = self.link.latest("LOCAL_POSITION_NED", 0.8)
-        att = self.link.latest("ATTITUDE", 0.8)
-        if pos is None or att is None:
-            return None
-        c, s = math.cos(att.yaw), math.sin(att.yaw)
-        north, east = pos.x * 1000.0, pos.y * 1000.0
-        return (c * north + s * east, -s * north + c * east)
+        pos, yaw = self._position_ned(), self._yaw()
+        return None if pos is None or yaw is None else _to_body(*pos, yaw)
 
     # ================================================================= worker
     def _run(self) -> None:
@@ -350,9 +363,6 @@ class ArduPilotFlightTransport(HeightPlanner, HeadSteering):
 
     def tick(self) -> None:
         now = self._clock()
-        if now - self._last_gcs_heartbeat >= 1.0:
-            self.link.send_gcs_heartbeat()
-            self._last_gcs_heartbeat = now
         if now - self._last_stream_request >= 5.0 and self.link.heartbeat() is not None:
             self.link.request_streams()
             self._last_stream_request = now
@@ -360,6 +370,10 @@ class ArduPilotFlightTransport(HeightPlanner, HeadSteering):
             step = getattr(self, f"_step_{self._phase.lower()}", None)
             if step is not None:
                 step(now)
+        # only after a step that worked: a loop that keeps failing goes quiet and the FC's GCS failsafe lands
+        if now - self._last_gcs_heartbeat >= 1.0:
+            self.link.send_gcs_heartbeat()
+            self._last_gcs_heartbeat = now
 
     def _step_spinup(self, now: float) -> None:
         """Arm in LOITER, or ALT_HOLD if refused."""
@@ -486,15 +500,15 @@ class ArduPilotFlightTransport(HeightPlanner, HeadSteering):
     def _step_move(self, now: float) -> None:
         if not self._airborne_checks(now):
             return
-        pos = self._position_body()
+        pos, yaw = self._position_ned(), self._yaw()
         move = self._move
-        if pos is None or move is None:
+        if pos is None or yaw is None or move is None:
             self._fail("FLOW_LOST", land=False, hold=True)
             return
-        done_f = pos[0] - move["start"][0]
-        done_r = pos[1] - move["start"][1]
-        left_f, left_r = move["goal"][0] - done_f, move["goal"][1] - done_r
-        remaining = math.hypot(left_f, left_r)
+        left_n = move["goal"][0] - (pos[0] - move["start"][0])
+        left_e = move["goal"][1] - (pos[1] - move["start"][1])
+        remaining = math.hypot(left_n, left_e)
+        left_f, left_r = _to_body(left_n, left_e, yaw)  # steer from where it points now
         if remaining < 80:
             self._move_done, self._move = True, None
             self._set_phase("FLY")
@@ -716,8 +730,10 @@ class ArduPilotFlightTransport(HeightPlanner, HeadSteering):
         flags |= FLAG_POS_HOLD if self._phase in {"FLY", "MOVE"} and quality >= FLOW_MIN_QUALITY else 0
         flags |= FLAG_MOVE_DONE if self._move_done else 0
         moved = (0, 0)
-        if self._move is not None and pos is not None:
-            moved = (pos[0] - self._move["start"][0], pos[1] - self._move["start"][1])
+        ned = self._position_ned()
+        if self._move is not None and ned is not None:
+            start = self._move["start"]
+            moved = _to_body(ned[0] - start[0], ned[1] - start[1], self._move["yaw"])
         return FlightTelemetry(
             self._phase, self._fault, flags, self._sequence, height or 0, self._target_mm,
             self._vertical_mm_s(), int(pos[0]) if pos else 0, int(pos[1]) if pos else 0, quality,

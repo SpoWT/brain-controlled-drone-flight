@@ -7,6 +7,12 @@ that records your own STOP / GO EEG and trains the model the drone flies with.
 See [docs/COMMANDS.md](docs/COMMANDS.md) for controls, limits, safety rules, the API and the MAVLink setup,
 and [docs/BCI_GAME.md](docs/BCI_GAME.md) for recording and training.
 
+## Safety
+
+Experimental research code, not a certified flight system or a medical device. Use it at your own risk.
+Test new changes with the props off, fly indoors with no one near the drone, and keep a hand on the
+EMERGENCY MOTOR CUT button. EEG control is unreliable: the automatic landings are the safety net, not the EEG.
+
 ## Layout
 
 | Path | Contents |
@@ -50,11 +56,11 @@ Optional files, not in the repo:
 
 ## Windows setup
 
-Repo in `%USERPROFILE%\NeuralFlightWeb`, the `windows/` scripts and `fc_scripts/always_land.lua` in
-`%USERPROFILE%\NeuralFlightAudit`. Then, from an admin PowerShell:
+Repo in `$env:USERPROFILE\NeuralFlightWeb`, the `windows/` scripts and `fc_scripts/always_land.lua` in
+`$env:USERPROFILE\NeuralFlightAudit`. Then, from an admin PowerShell:
 
 ```
-powershell -ExecutionPolicy Bypass -File %USERPROFILE%\NeuralFlightAudit\install_drone_app.ps1
+powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\NeuralFlightAudit\install_drone_app.ps1"
 ```
 
 This adds the DRONE APP desktop icon.

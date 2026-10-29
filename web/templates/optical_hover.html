@@ -172,7 +172,7 @@
       <div class="box settings">
         <label>HEIGHT (m)<input id="targetHeight" type="number" min="0.3" max="2.0" step="0.1" value="0.3"></label>
         <label>GO (m)<input id="goDistance" type="number" min="0.1" max="5.0" step="0.1" value="2.0"></label>
-        <label>SPEED (m/s)<input id="keySpeed" type="number" min="0.1" max="0.6" step="0.05" value="0.3"></label>
+        <label>SPEED (m/s)<input id="keySpeed" type="number" min="0.1" max="0.4" step="0.05" value="0.3"></label>
       </div>
       {% else %}
       <div class="box">
@@ -509,7 +509,7 @@
 
     function motion() {
       if (!ASSISTED) return {};
-      const speed = Math.round(setting('keySpeed', 0.3, 0.1, 0.6) * 1000);
+      const speed = Math.round(setting('keySpeed', 0.3, 0.1, 0.4) * 1000);
       const axis = (plus, minus) => (keysDown.has(plus) ? 1 : 0) - (keysDown.has(minus) ? 1 : 0);
       return {forward: axis('w', 's') * speed, right: axis('d', 'a') * speed,
               yaw: axis('arrowright', 'arrowleft') * TURN_DEG_S, target_mm: targetHeightMm};

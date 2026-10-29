@@ -99,6 +99,20 @@ class FullFlightTests(unittest.TestCase):
         self.assertEqual(sim.phase(), "FLY")
         self.assertTrue(sim.service.status()["telemetry"]["move_done"])
 
+    def test_move_stays_straight_while_the_heading_drifts(self):
+        # far from the EKF origin, where heading drift used to bend the move sideways
+        sim = Sim(self, north=3.0, east=1.0)
+        sim.arm(1000)
+        sim.advance(12, keys=(0, 0))
+        north0, east0 = sim.fc.north, sim.fc.east
+        sim.fc.yaw_drift_deg_s = 1.0
+        sim.service.go_forward(sim.token, sim.next_seq(), 2000)
+        sim.advance(14, keys=(0, 0))
+        self.assertEqual(sim.phase(), "FLY")
+        self.assertTrue(sim.service.status()["telemetry"]["move_done"])
+        self.assertAlmostEqual(sim.fc.north - north0, 2.0, delta=0.15)
+        self.assertAlmostEqual(sim.fc.east - east0, 0.0, delta=0.15, msg="no sideways error from the drift")
+
     def test_emergency_cut_forces_disarm_in_air(self):
         sim = Sim(self)
         sim.arm(1000)
@@ -204,6 +218,34 @@ class SafetyTests(unittest.TestCase):
         sim.advance(5)
         self.assertGreaterEqual(sim.fc.gcs_heartbeats, 5)
 
+    def test_failing_control_loop_stops_the_gcs_heartbeat(self):
+        # silence makes the FC's own GCS failsafe land it (FS_GCS_TIMEOUT 3)
+        sim = Sim(self)
+        sim.arm(1000)
+        sim.advance(12, keys=(0, 0))
+        sim.transport._step_fly = lambda now: 1 / 0
+        before = sim.fc.gcs_heartbeats
+        for _ in range(40):  # 4 s of 0.1 s ticks
+            sim.now += 0.1
+            with self.assertRaises(ZeroDivisionError):
+                sim.transport.tick()
+        self.assertEqual(sim.fc.gcs_heartbeats, before)
+
+    def test_one_failed_tick_keeps_the_gcs_heartbeat(self):
+        sim = Sim(self)
+        sim.arm(1000)
+        sim.advance(12, keys=(0, 0))
+        fly = sim.transport._step_fly
+        sim.transport._step_fly = lambda now: 1 / 0
+        sim.now += 1.1
+        with self.assertRaises(ZeroDivisionError):
+            sim.transport.tick()
+        sim.transport._step_fly = fly
+        before = sim.fc.gcs_heartbeats
+        sim.advance(3.5, keys=(0, 0))
+        self.assertGreaterEqual(sim.fc.gcs_heartbeats - before, 3, "one error does not silence it")
+        self.assertEqual(sim.phase(), "FLY")
+
 
 class LandStickTests(unittest.TestCase):
     def test_land_centres_sticks_even_while_moving(self):
@@ -296,12 +338,19 @@ class SlowFlightTests(unittest.TestCase):
         sim = Sim(self, loiter_ok=False)  # FLOWHOLD fallback: lean from EKF speed feedback
         sim.arm(1000)
         sim.advance(12, keys=(0, 0))
-        sim.advance(6, keys=(600, 0))  # page max 600 mm/s requested
+        sim.advance(6, keys=(600, 0))  # more than the 400 mm/s cap
         self.assertLess(sim.fc.vn, 0.45, "speed capped near 0.4 m/s, not accelerating forever")
         self.assertGreater(sim.fc.vn, 0.25)
         self.assertLessEqual(abs(sim.fc.sticks[0]), 300, "tilt never above the gentle limit")
         sim.advance(3, keys=(0, 0))
         self.assertLess(abs(sim.fc.vn), 0.05, "keys released -> stops")
+
+    def test_page_speed_is_capped_at_the_stick_limit(self):
+        sim = Sim(self)
+        sim.arm(1000)
+        sim.advance(12, keys=(0, 0))
+        sim.advance(0.5, keys=(900, -900))
+        self.assertEqual(sim.transport._velocity, (400, -400))
 
 
 class OldDroneLogicTests(unittest.TestCase):
@@ -545,6 +594,18 @@ class BlindCameraTests(unittest.TestCase):
         sim.advance(2.5, keys=(0, 0))
         self.assertEqual(sim.service.status()["last_fault"], "FLOW_LOST")
         self.assertIn(("SET_MODE", 2), sim.fc.log[mark:], "ALT_HOLD: level, not chasing a blind position")
+        sim.advance(10, keys=(0, 0))
+        self.assertFalse(sim.fc.armed)
+        self.assertEqual(sim.phase(), "LANDED")
+
+    def test_floor_camera_going_silent_in_flight_levels_and_lands(self):
+        sim = Sim(self)
+        sim.arm(300)
+        sim.advance(16, keys=(0, 0))
+        self.assertEqual(sim.phase(), "FLY")
+        sim.fc.flow_alive = False
+        sim.advance(4.5, keys=(0, 0))
+        self.assertEqual(sim.service.status()["last_fault"], "FLOW_LOST")
         sim.advance(10, keys=(0, 0))
         self.assertFalse(sim.fc.armed)
         self.assertEqual(sim.phase(), "LANDED")
