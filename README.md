@@ -11,7 +11,7 @@ and [docs/BCI_GAME.md](docs/BCI_GAME.md) for recording and training.
 
 Experimental research code, not a certified flight system or a medical device. Use it at your own risk.
 Test new changes with the props off, fly indoors with no one near the drone, and keep a hand on the
-EMERGENCY MOTOR CUT button. EEG control is unreliable: the automatic landings are the safety net, not the EEG.
+EMERGENCY MOTOR CUT button. 
 
 ## Layout
 
