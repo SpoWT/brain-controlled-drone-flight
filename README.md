@@ -58,6 +58,10 @@ python -m bci_game
 Open `http://127.0.0.1:8790`, connect the Ganglion, drive at least two rides, then train. The best model is saved
 to `eeg_bundles/`. Electrode placement and training details: [docs/BCI_GAME.md](docs/BCI_GAME.md).
 
+Feel free to test it in an FPV simulator (for example on Steam) first: `python -m bci_game keys` holds W
+(`--key up` for the up arrow) while you think GO, so the drone climbs, and lets go on STOP, so it falls. For safety
+it is suggested to check it in a simulator before flying for real, but it's up to you.
+
 Your rides (`eeg_recordings/`) and models (`eeg_bundles/`) hold your brain data. Git ignores both folders, so they
 stay out of uploads.
 

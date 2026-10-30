@@ -20,6 +20,7 @@ PyWavelets==1.9.0
 antropy==0.1.9
 mne==1.12.1
 asrpy==0.0.8
+pynput==1.8.1
 
 # tests
 pytest==9.1.1

@@ -1,4 +1,5 @@
-"""``python -m bci_game`` starts the recording game; ``train``, ``check`` and ``list`` manage bundles."""
+"""``python -m bci_game`` starts the recording game; ``train``, ``check`` and ``list`` manage bundles;
+``keys`` holds a key in an FPV simulator while the newest bundle decodes GO."""
 
 from __future__ import annotations
 
@@ -13,6 +14,7 @@ from pathlib import Path
 import numpy as np
 
 from .config import BUNDLES_DIR, DEFAULT_PORT, HOST, MODEL_NAMES, RECORDINGS_DIR
+from .sim_keys import KEYS, SIMULATED_SWITCH_S
 
 
 def _warm_up() -> None:
@@ -87,6 +89,61 @@ def _list(args) -> int:
     return 0
 
 
+def _keys(args) -> int:
+    from bci_game.runtime import BCIGameStopGoRuntime
+
+    from . import bundles, sim_keys
+    from .stream import EEGStream, GanglionSource, SimulatedSource
+    from .studio import LiveDecoder
+
+    report = bundles.latest_report(args.bundles)
+    if report is None:
+        print(f"No trained model in {args.bundles}: train one in the game first.", file=sys.stderr)
+        return 1
+    if report.get("simulated") and not args.simulate:
+        print("The newest model was trained on simulator rides: add --simulate.", file=sys.stderr)
+        return 1
+    try:
+        keyboard, key = sim_keys.keyboard_for(args.key)
+    except ImportError as exc:
+        print(f"Not started: {exc}. Run: pip install -r requirements.txt", file=sys.stderr)
+        return 1
+    try:
+        runtime = BCIGameStopGoRuntime(Path(report["folder"]))
+        source = SimulatedSource() if args.simulate else GanglionSource.connect()
+    except Exception as exc:
+        print(f"Not started: {exc}", file=sys.stderr)
+        return 1
+    holder, stop = sim_keys.KeyHolder(keyboard, key), threading.Event()
+    remove_console_handler = sim_keys.release_on_console_close(holder, stop)
+    stream = EEGStream()
+    stream.attach(source)
+    decoder = LiveDecoder(stream, runtime).start()
+    timer = threading.Timer(args.delay + args.seconds, stop.set) if args.seconds > 0 else None
+    if timer is not None:
+        timer.start()
+    if args.simulate:
+        threading.Thread(target=sim_keys.alternate_driving, args=(source, stop), name="simulated-driving",
+                         daemon=True).start()
+    print(f"{report['bundle']}: holds {args.key} while you think GO, lets go on STOP. Click into the simulator: "
+          f"it starts in {args.delay:g} s. Ctrl+C here to stop.", flush=True)
+    try:
+        if not stop.wait(args.delay):
+            sim_keys.hold_while_go(decoder, holder, stop=stop, say=lambda text: print(text, flush=True))
+    except KeyboardInterrupt:
+        pass
+    finally:
+        stop.set()
+        holder.release()
+        remove_console_handler()
+        if timer is not None:
+            timer.cancel()
+        decoder.stop()
+        stream.detach()
+    print(f"Stopped; {args.key} is released.")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m bci_game",
                                      description="Record STOP / GO EEG, train bundles and check them.")
@@ -107,6 +164,15 @@ def main(argv: list[str] | None = None) -> int:
     lister = commands.add_parser("list", help="list trained bundles")
     lister.add_argument("folder", type=Path, nargs="?", default=BUNDLES_DIR)
     lister.set_defaults(run=_list)
+    keys = commands.add_parser("keys", help="hold a key in an FPV simulator while the newest bundle decodes GO")
+    keys.add_argument("--key", choices=KEYS, default="w", help="W or the up arrow (default: w)")
+    keys.add_argument("--bundles", type=Path, default=BUNDLES_DIR, help="bundle folder (default: eeg_bundles)")
+    keys.add_argument("--simulate", action="store_true",
+                      help=f"simulated EEG that switches between GO and STOP every {SIMULATED_SWITCH_S:g} s, "
+                           "instead of the Ganglion")
+    keys.add_argument("--delay", type=float, default=5.0, help="seconds to click into the simulator (default: 5)")
+    keys.add_argument("--seconds", type=float, default=0.0, help="stop after this long (default: until Ctrl+C)")
+    keys.set_defaults(run=_keys)
     args = parser.parse_args(argv)
     return args.run(args)
 

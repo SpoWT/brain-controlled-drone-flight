@@ -478,6 +478,31 @@ def test_drive_mode_uses_the_latest_bundle(trained):
     assert studio.live_status()["reason"] == "not driving"
 
 
+def test_simulator_keys_follow_the_model_and_end_released(trained, monkeypatch, capsys):
+    from bci_game import sim_keys
+    from bci_game.studio import LiveDecoder
+
+    log, decisions = [], iter([GO] * 3 + [STOP] * 2 + [GO] * 100)
+
+    class Keyboard:
+        def press(self, key):
+            log.append(("press", key))
+
+        def release(self, key):
+            log.append(("release", key))
+
+    monkeypatch.setattr(sim_keys, "keyboard_for", lambda name: (Keyboard(), name))
+    monkeypatch.setattr(LiveDecoder, "status", lambda self: {"state": next(decisions), "p_go": 0.5, "reason": "test"})
+    assert main(["keys", "--simulate", "--bundles", str(trained["bundles"]), "--delay", "0", "--seconds", "2",
+                 "--key", "up"]) == 0
+    out = capsys.readouterr().out
+    assert "holds up while" in out and trained["folder"].name in out
+    assert log[:3] == [("press", "up"), ("release", "up"), ("press", "up")], "GO holds the key, STOP lets go"
+    assert log[-1] == ("release", "up"), "never left held down at the end"
+    assert "up is released" in out
+    assert main(["keys", "--simulate", "--bundles", str(trained["bundles"] / "missing"), "--delay", "0"]) == 1
+
+
 def test_command_line_list_and_check(trained, capsys):
     assert main(["list", str(trained["bundles"])]) == 0
     assert "synthetic" in capsys.readouterr().out

@@ -112,7 +112,7 @@ the others appear in its leaderboard. Each window is cleaned and scored exactly 
 | Scored windows | When the Random Forest is compared: only windows it can score (from about 8 s into a ride), so all models face the same test. A window the Random Forest would reject live counts as STOP for it |
 | STOP threshold | 0.5, or the Random Forest's tuned value; the flying website uses it until the STOP confidence is set |
 | Minimum | 2 rides marked IN, 40 clean windows each of GO and STOP |
-| Simulator rides | Never mixed with Ganglion rides; a model trained without Ganglion rides only drives the game |
+| Simulator rides | Never mixed with Ganglion rides; a model trained without Ganglion rides only drives the game (and `keys --simulate`) |
 | Time | About 25 minutes on a laptop for five 10-minute rides |
 
 Live decisions use a 3-window majority vote and hold each state for at least 500 ms. The Random Forest
@@ -143,6 +143,7 @@ A bundle runs its own code: only load bundles you trained or trust.
 | `python -m bci_game train [--recordings DIR] [--out DIR] [--name NAME] [--models LIST]` | Compare the models (default all: `xgboost,lightgbm,random_forest,cfc,ltc,gru`) on the rides marked IN, save the best |
 | `python -m bci_game list [DIR]` | List bundles with their model and held-out balanced accuracy |
 | `python -m bci_game check BUNDLE` | Verify hashes, load, run one noise window |
+| `python -m bci_game keys [--key w\|up] [--bundles DIR] [--simulate] [--delay 5] [--seconds S]` | Hold W or the up arrow while the newest bundle decodes GO, let go on STOP, for an FPV simulator where that key is throttle. Keys go to the focused window: click into the simulator during the delay. Ctrl+C, or closing the window on Windows, stops and lets go; if it is force-killed, tap the key once. `--simulate` switches the simulated EEG between GO and STOP every 3 s. macOS: give the terminal Accessibility permission, or the keys never arrive |
 
 ## 9. Code
 
@@ -150,6 +151,7 @@ A bundle runs its own code: only load bundles you trained or trust.
 |---|---|
 | `bci_game/server.py`, `studio.py` | HTTP routes; headset, rides, drive decoder and training job |
 | `bci_game/stream.py` | Ganglion (via `bci_game/acquisition.py`) and simulator sources, background reader |
+| `bci_game/sim_keys.py` | Simulator keys: holds a key while the drive decoder says GO |
 | `bci_game/session.py`, `labels.py`, `dsp.py` | Ride storage, window labels, signal check |
 | `bci_game/dataset.py` | Rides to labelled, ASR-cleaned windows |
 | `bci_game/models.py`, `train.py` | The six models and how each is trained; the comparison and the saved best |
