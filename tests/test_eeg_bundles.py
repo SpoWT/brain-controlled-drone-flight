@@ -12,7 +12,7 @@ from unittest import mock
 
 import numpy as np
 
-from bci_game_runtime import (BCIGameStopGoRuntime, bundle_roots, continuous_window, default_bundle, file_sha256,
+from bci_game.runtime import (BCIGameStopGoRuntime, bundle_roots, continuous_window, default_bundle, file_sha256,
                               find_bundles, read_bundle, verify_bundle)
 
 ENGINE = '''import json, os
@@ -136,7 +136,7 @@ class DiscoveryTests(unittest.TestCase):
         (folder / "bundle.json").write_text("[]")
         with self.assertRaises(ValueError):
             read_bundle(folder)
-        with self.assertLogs("bci_game_runtime", "WARNING"):
+        with self.assertLogs("bci_game.runtime", "WARNING"):
             self.assertEqual(find_bundles([self.root]), [])
 
     def test_manifests_cannot_point_outside_their_folder(self):
@@ -145,7 +145,7 @@ class DiscoveryTests(unittest.TestCase):
             folder = make_bundle(self.root / "bad", **changes)
             with self.assertRaises(ValueError):
                 read_bundle(folder)
-            with self.assertLogs("bci_game_runtime", "WARNING"):
+            with self.assertLogs("bci_game.runtime", "WARNING"):
                 self.assertEqual(find_bundles([self.root]), [])
 
 
@@ -231,7 +231,7 @@ class CatalogTests(unittest.TestCase):
         self.addCleanup(patch.stop)
 
     def test_trained_bundles_are_listed_and_auto_picks_the_best(self):
-        from saved_eeg_models import SavedEEGModels
+        from drone_flight.eeg.saved_eeg_models import SavedEEGModels
 
         make_bundle(self.root / "weaker", accuracy=0.55, trained_at="20260601_000000")
         make_bundle(self.root / "stronger", accuracy=0.65)
@@ -246,14 +246,14 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(models.load("bundle-weaker").predict(WINDOW)["decision"], "NOT_STOP")
 
     def test_simulator_bundles_are_never_offered_for_flight(self):
-        from saved_eeg_models import SavedEEGModels
+        from drone_flight.eeg.saved_eeg_models import SavedEEGModels
 
         make_bundle(self.root / "simulated", simulated=True)
         make_bundle(self.root / "headset")
         self.assertEqual({spec["id"] for spec in SavedEEGModels(root=self.root).catalog()}, {"bundle-headset"})
 
     def test_the_website_starts_from_the_bundle_threshold(self):
-        from optical_eeg import LiveEEGService
+        from drone_flight.eeg.optical_eeg import LiveEEGService
 
         make_bundle(self.root / "careful", stop_threshold=0.6)
         service = LiveEEGService(settings_path=None)
@@ -263,7 +263,7 @@ class CatalogTests(unittest.TestCase):
         service.close()
 
     def test_dates_use_this_computers_time_without_a_time_zone_database(self):
-        from saved_eeg_models import SavedEEGModels
+        from drone_flight.eeg.saved_eeg_models import SavedEEGModels
 
         make_bundle(self.root / "dated", trained_at="20260115_093000")
         with mock.patch("zoneinfo.ZoneInfo", side_effect=KeyError("no time zone database")):
@@ -272,7 +272,7 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(spec["date_label"], "Jan 15, 2026 · trained")
 
     def test_a_saved_threshold_wins_until_then_the_bundle_threshold_follows_the_model(self):
-        from optical_eeg import LiveEEGService
+        from drone_flight.eeg.optical_eeg import LiveEEGService
 
         make_bundle(self.root / "best", stop_threshold=0.6, accuracy=0.7)
         make_bundle(self.root / "other", stop_threshold=0.4)
@@ -292,13 +292,13 @@ class CatalogTests(unittest.TestCase):
         service.close()
 
     def test_shared_eeg_code_needs_no_time_zone_database(self):
-        for name in ("saved_eeg_models.py", "bci_game_runtime.py", "optical_eeg.py"):
+        for name in ("drone_flight/eeg/saved_eeg_models.py", "bci_game/runtime.py", "drone_flight/eeg/optical_eeg.py"):
             text = (Path(__file__).resolve().parents[1] / name).read_text()
             self.assertNotIn("zoneinfo", text, name)
             self.assertNotIn("America/", text, name)
 
     def test_the_catalog_names_each_model_type_and_its_window(self):
-        from saved_eeg_models import SavedEEGModels
+        from drone_flight.eeg.saved_eeg_models import SavedEEGModels
 
         make_bundle(self.root / "forest", scaler=False, model_type="random_forest",
                     engine_settings={"window_samples": 7000, "uses_asr": False})
@@ -310,7 +310,7 @@ class CatalogTests(unittest.TestCase):
                          ("liquid · STOP / GO · CfC", 200))
 
     def test_auto_ranks_every_bundle_on_one_metric(self):
-        from saved_eeg_models import SavedEEGModels
+        from drone_flight.eeg.saved_eeg_models import SavedEEGModels
 
         # plain accuracy and balanced accuracy rank these two in opposite orders
         make_bundle(self.root / "steady", accuracy=0.60, engine_settings={"balanced_accuracy": 0.58})
@@ -325,7 +325,7 @@ class CatalogTests(unittest.TestCase):
         self.assertIn("held-out accuracy across 2 sessions", recommendation["reason"])
 
     def test_without_bundles_the_eeg_panel_says_so(self):
-        from optical_eeg import LiveEEGService
+        from drone_flight.eeg.optical_eeg import LiveEEGService
 
         service = LiveEEGService(settings_path=None)
         status = service.status()
@@ -342,7 +342,7 @@ class WebsiteWindowTests(unittest.TestCase):
     """The flying website feeds each model the window length it asks for."""
 
     def test_a_35_second_model_gets_35_seconds_of_continuous_eeg(self):
-        from optical_eeg import LiveEEGService
+        from drone_flight.eeg.optical_eeg import LiveEEGService
 
         now = [100.0]
         service = LiveEEGService(settings_path=None, clock=lambda: now[0], wall_clock=lambda: now[0])
@@ -390,7 +390,7 @@ class WebsiteWindowTests(unittest.TestCase):
         service.close()
 
     def test_a_settings_file_that_is_not_an_object_is_ignored(self):
-        from optical_eeg import LiveEEGService
+        from drone_flight.eeg.optical_eeg import LiveEEGService
 
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "settings.json"
@@ -402,7 +402,7 @@ class WebsiteWindowTests(unittest.TestCase):
     @unittest.skipUnless(all(importlib.util.find_spec(name) for name in ("torch", "xgboost", "lightgbm")),
                          "needs torch, xgboost and lightgbm")
     def test_the_website_orders_the_openmp_runtimes(self):
-        code = ("import saved_eeg_models, numpy as np, torch, xgboost, lightgbm\n"
+        code = ("import drone_flight.eeg.saved_eeg_models, numpy as np, torch, xgboost, lightgbm\n"
                 "torch.nn.GRU(40, 8)(torch.zeros(4, 20, 40))[0].sum().backward()\n"
                 "x = np.random.default_rng(0).normal(size=(400, 50)); y = (x[:, 0] > 0).astype(int)\n"
                 "xgboost.XGBClassifier(n_estimators=20, n_jobs=-1).fit(x, y)\n"

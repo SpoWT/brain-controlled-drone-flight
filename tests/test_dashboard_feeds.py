@@ -5,8 +5,8 @@ from types import SimpleNamespace as NS
 
 from flask import Flask
 
-from dashboard_feeds import create_dashboard_blueprint
-from eye_cameras import EyeCamera, EyeCameras, EyeDevice, create_eye_blueprint, find_eye_cameras, measure
+from drone_flight.web.dashboard_feeds import create_dashboard_blueprint
+from drone_flight.head.eye_cameras import EyeCamera, EyeCameras, EyeDevice, create_eye_blueprint, find_eye_cameras, measure
 
 HUB = r"PCIROOT(0)#PCI(0201)#USBROOT(0)#USB(3)"  # the goggles' hub
 
@@ -112,14 +112,14 @@ class EyeDeviceTests(unittest.TestCase):
     PATH_B = r"\\?\usb#vid_0c45&pid_6366&mi_00#a&f787245&0&0000#{65e8773d-8f56-11d0-a3b9-00a0c9223196}\global"
 
     def test_path_parts(self):
-        from eye_cameras import instance_id, short_id, usb_port
+        from drone_flight.head.eye_cameras import instance_id, short_id, usb_port
         self.assertEqual(short_id(self.PATH_B), "F787245")
         self.assertEqual(instance_id(self.PATH_A), r"USB\VID_0C45&PID_6366&MI_00\A&183AF011&0&0000")
         self.assertEqual(usb_port(HUB + "#USB(1)"), (HUB, 1))
         self.assertEqual(usb_port(""), ("", 0))
 
     def test_eye_cameras_are_ordered_by_usb_port_not_plug_order(self):
-        from eye_cameras import find_eye_devices
+        from drone_flight.head.eye_cameras import find_eye_devices
         devices = [("ASUS FHD webcam", r"\\?\usb#vid_3277&pid_0010&mi_00#7&df5034d&0&0000#{x}\global"),
                    ("Innomaker-U20CAM-1080p-S1", self.PATH_B), ("Innomaker-U20CAM-1080p-S1", self.PATH_A)]
         ports = {self.PATH_A: HUB + "#USB(1)", self.PATH_B: HUB + "#USB(3)"}
@@ -163,7 +163,7 @@ class EyeDeviceTests(unittest.TestCase):
     def test_slots_stay_put_while_a_camera_is_missing(self):
         import tempfile
         from pathlib import Path
-        from eye_cameras import assign_slots
+        from drone_flight.head.eye_cameras import assign_slots
         one, three = device(1), device(3)
         self.assertEqual(assign_slots([three], [one, three], lambda d: None), [None, three], "EYE 2 stays EYE 2")
         self.assertEqual(assign_slots([three], [None, None], lambda d: 1), [None, three], "its slot from last time")
@@ -192,7 +192,7 @@ class ReplugTests(unittest.TestCase):
     """The two cameras can trade device paths when re-plugged; the USB port decides which eye is which."""
 
     def test_swapped_paths_follow_the_port(self):
-        from eye_cameras import assign_slots
+        from drone_flight.head.eye_cameras import assign_slots
         before = [EyeDevice("PX", "X", f"{HUB}#USB(1)"), EyeDevice("PY", "Y", f"{HUB}#USB(3)")]
         after = [EyeDevice("PY", "Y", f"{HUB}#USB(1)"), EyeDevice("PX", "X", f"{HUB}#USB(3)")]
         slots = {f"{HUB}#USB(1)": 0, f"{HUB}#USB(3)": 1}
@@ -200,7 +200,7 @@ class ReplugTests(unittest.TestCase):
         self.assertEqual([d.location for d in chosen], [f"{HUB}#USB(1)", f"{HUB}#USB(3)"])
 
     def test_one_failed_port_lookup_changes_nothing_else(self):
-        from eye_cameras import find_eye_devices, settings_key
+        from drone_flight.head.eye_cameras import find_eye_devices, settings_key
         a = r"\\?\usb#vid_0c45&pid_6366&mi_00#a&1&0&0000#{x}\global"
         b = r"\\?\usb#vid_0c45&pid_6366&mi_00#a&2&0&0000#{x}\global"
         listing = [("Innomaker-U20CAM-1080p-S1", b), ("Innomaker-U20CAM-1080p-S1", a)]
@@ -214,7 +214,7 @@ class ReplugTests(unittest.TestCase):
         self.assertEqual(settings_key(fresh[0], fresh), "usb port 1", "the other camera keeps its key")
 
     def test_a_cached_port_now_held_by_the_other_camera_is_not_reused(self):
-        from eye_cameras import find_eye_devices
+        from drone_flight.head.eye_cameras import find_eye_devices
         listing = [("Innomaker-U20CAM-1080p-S1", "PX"), ("Innomaker-U20CAM-1080p-S1", "PY")]
         known = {}
         find_eye_devices(listing, locate={"PX": f"{HUB}#USB(1)", "PY": f"{HUB}#USB(3)"}.get, known=known)
@@ -231,7 +231,7 @@ class ReplugTests(unittest.TestCase):
         self.assertEqual([c.device_id for c in eyes.cameras], ["Y", "X"], "port 1 is EYE 1")
 
     def test_path_now_on_another_port_is_not_opened(self):
-        from eye_cameras import MOVED
+        from drone_flight.head.eye_cameras import MOVED
         opened = []
         camera = EyeCamera(0, "EYE 1", device=device(1), resolver=lambda path: 1, locate=lambda path: f"{HUB}#USB(3)",
                            opener=lambda index: opened.append(index))
@@ -245,7 +245,7 @@ class ReplugTests(unittest.TestCase):
         camera._watched_at = -1e9
 
     def test_list_changing_while_opening_opens_again(self):
-        import eye_cameras
+        from drone_flight.head import eye_cameras
 
         class Capture:
             def __init__(self):
@@ -283,7 +283,7 @@ class ReplugTests(unittest.TestCase):
 
 class SharedIndexTests(unittest.TestCase):
     def test_an_index_held_by_the_other_slot_is_not_reused(self):
-        from eye_cameras import LIST_CHANGED, DeviceClaims
+        from drone_flight.head.eye_cameras import LIST_CHANGED, DeviceClaims
         claims = DeviceClaims()
         one, two = EyeCamera(0, "EYE 1", claims=claims), EyeCamera(1, "EYE 2", claims=claims)
         asked = []
@@ -297,7 +297,7 @@ class SharedIndexTests(unittest.TestCase):
         self.assertIsNotNone(one)
 
     def test_software_cameras_without_a_device_path_do_not_hide_the_eyes(self):
-        from eye_cameras import _read, index_of
+        from drone_flight.head.eye_cameras import _read, index_of
 
         class Bag:
             def Read(self, key, pErrorLog=None):
@@ -310,7 +310,7 @@ class SharedIndexTests(unittest.TestCase):
         self.assertIsNone(index_of("", listing))
 
     def test_a_port_that_cannot_be_read_is_looked_at_again_before_guessing(self):
-        from eye_cameras import PARTIAL_LOOKS
+        from drone_flight.head.eye_cameras import PARTIAL_LOOKS
         looks = [[device(1), EyeDevice("cam-B", "B", "")]] * PARTIAL_LOOKS + [[device(1), device(3, "B", "cam-B")]]
         eyes = EyeCameras([EyeCamera(0, "EYE 1"), EyeCamera(1, "EYE 2")], finder=lambda: looks.pop(0))
         for _ in range(PARTIAL_LOOKS):
@@ -324,7 +324,7 @@ class OneCameraOneSlotTests(unittest.TestCase):
     """One camera is never open in both slots."""
 
     def test_second_slot_refuses_the_camera_the_first_has_open(self):
-        from eye_cameras import DeviceClaims
+        from drone_flight.head.eye_cameras import DeviceClaims
 
         class Capture:
             def read(self):
@@ -358,7 +358,7 @@ class OneCameraOneSlotTests(unittest.TestCase):
         self.assertEqual(two.status()["error"], "already open in the other slot")
 
     def test_unplugged_camera_says_so_and_is_looked_for_again(self):
-        from eye_cameras import NOT_PLUGGED, REFRESH_EVERY_S
+        from drone_flight.head.eye_cameras import NOT_PLUGGED, REFRESH_EVERY_S
         now = [0.0]
         calls = []
         camera = EyeCamera(0, "EYE 1", device=device(1), resolver=lambda path: None, clock=lambda: now[0])
@@ -431,7 +431,7 @@ class NoPictureTests(unittest.TestCase):
     """A camera with no picture is reopened by itself."""
 
     def test_silent_camera_is_reopened_until_pictures_come_back(self):
-        import eye_cameras
+        from drone_flight.head import eye_cameras
         opened = []
 
         class Capture:
@@ -471,7 +471,7 @@ class SamePictureTests(unittest.TestCase):
 
     def test_second_view_of_the_same_camera_is_reopened_then_reported(self):
         import numpy as np
-        from eye_cameras import GAVE_UP, MAX_REOPENS, SAME_CHECKS
+        from drone_flight.head.eye_cameras import GAVE_UP, MAX_REOPENS, SAME_CHECKS
         picture = np.tile(np.arange(32, dtype="float32") * 6, (24, 1))  # has detail
         one, two = EyeCamera(1, "EYE 1"), EyeCamera(2, "EYE 2")
         eyes = EyeCameras([one, two])
@@ -487,7 +487,7 @@ class SamePictureTests(unittest.TestCase):
 
     def test_two_different_eyes_or_dark_views_are_left_alone(self):
         import numpy as np
-        from eye_cameras import SAME_CHECKS, same_picture
+        from drone_flight.head.eye_cameras import SAME_CHECKS, same_picture
         left = np.tile(np.arange(32, dtype="float32") * 6, (24, 1))
         self.assertFalse(same_picture(left, left[:, ::-1].copy()), "different pictures")
         dark = np.full((24, 32), 3, dtype="float32")

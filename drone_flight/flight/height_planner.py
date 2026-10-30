@@ -8,7 +8,7 @@ from __future__ import annotations
 import math
 from typing import Optional
 
-from flight_sticks import plan_for
+from drone_flight.flight.flight_sticks import plan_for
 
 PLAN_DEADBAND_MM = 30
 PLAN_CORRECTION_GAIN = 0.8     # approach from one side, never cycle

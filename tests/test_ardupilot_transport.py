@@ -5,9 +5,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from ardupilot_flight_transport import ArduPilotFlightTransport, throttle_for_climb
-from ardupilot_link import ArduPilotLink
-from assisted_flight_service import AssistedFlightService
+from drone_flight.flight.ardupilot_flight_transport import ArduPilotFlightTransport, throttle_for_climb
+from drone_flight.flight.ardupilot_link import ArduPilotLink
+from drone_flight.flight.assisted_flight_service import AssistedFlightService
+from drone_flight.head.eye_steering import TILT_MAX_DEG
 from tests.fake_ardupilot import FakeArduPilot
 
 
@@ -752,11 +753,26 @@ class TurnTests(unittest.TestCase):
 class FakeHead:
     """Stands in for head_follow.HeadYawReader (the VR headset's BNO08x)."""
 
-    def __init__(self, yaw=66.0):
-        self.yaw = yaw
+    def __init__(self, yaw=66.0, pitch=-5.0):
+        self.yaw, self.pitch = yaw, pitch
 
     def latest(self, max_age):
         return self.yaw
+
+    def latest_pitch(self, max_age):
+        return self.pitch
+
+
+class FakeEyes:
+    """Stands in for eye_cameras.EyeCameras: pupil position per eye, as fractions of the picture."""
+
+    def __init__(self):
+        self.seen = {0: (0.5, 0.5), 1: (0.45, 0.5)}
+        self.reads = 0  # reading keeps the real cameras on
+
+    def pupils(self, max_age):
+        self.reads += 1
+        return dict(self.seen)
 
 
 class HeadTurnTests(unittest.TestCase):
@@ -871,6 +887,152 @@ class HeadTurnTests(unittest.TestCase):
         head.yaw = 126.0
         sim.advance(3, keys=(0, 0))
         self.assertAlmostEqual(sim.fc.yaw_deg, 0.0, delta=1)
+
+
+def fly_with_head_and_eyes(test, *, eyes=True):
+    sim = Sim(test)
+    head, seen = FakeHead(66.0), FakeEyes() if eyes else None
+    sim.transport.head, sim.transport.eyes = head, seen
+    sim.arm(300)
+    sim.advance(16, keys=(0, 0))
+    test.assertEqual(sim.phase(), "FLY")
+    sim.service.set_head_follow(sim.token, True)
+    sim.advance(0.5, keys=(0, 0))  # where the head and eyes are now = straight ahead
+    return sim, head, seen
+
+
+class EyeSteeringTests(unittest.TestCase):
+    """Moving the eyes left or right adds a little to the head's turn."""
+
+    def test_eyes_turn_the_drone_a_little(self):
+        sim, head, eyes = fly_with_head_and_eyes(self)
+        eyes.seen = {0: (0.3, 0.5), 1: (0.25, 0.5)}  # looking right: the pupils move left in the pictures
+        sim.advance(4, keys=(0, 0))
+        self.assertGreater(sim.fc.yaw_deg, 8, "eyes right -> drone turns right")
+        self.assertLess(sim.fc.yaw_deg, 16, "only a little")
+        self.assertGreater(sim.transport.direction_status()["eye_turn"], 0)
+        eyes.seen = {0: (0.5, 0.5), 1: (0.45, 0.5)}
+        sim.advance(4, keys=(0, 0))
+        self.assertAlmostEqual(sim.fc.yaw_deg, 0, delta=5, msg="eyes back ahead -> back to the head's heading")
+        self.assertEqual(sim.service.status()["last_fault"], "NONE")
+
+    def test_eyes_turn_left_too_and_never_past_their_cap(self):
+        sim, head, eyes = fly_with_head_and_eyes(self)
+        eyes.seen = {0: (1.0, 0.5), 1: (1.0, 0.5)}  # far left
+        sim.advance(5, keys=(0, 0))
+        self.assertLess(sim.fc.yaw_deg, -8)
+        self.assertGreater(sim.fc.yaw_deg, -16)
+
+    def test_eyes_add_to_the_head(self):
+        sim, head, eyes = fly_with_head_and_eyes(self)
+        head.yaw = 66.0 + 30
+        eyes.seen = {0: (0.3, 0.5), 1: (0.25, 0.5)}
+        sim.advance(5, keys=(0, 0))
+        self.assertGreater(sim.fc.yaw_deg, 38, "head 30 + eyes 15")
+
+    def test_closed_eyes_keep_the_head_heading(self):
+        sim, head, eyes = fly_with_head_and_eyes(self)
+        eyes.seen = {0: (0.3, 0.5), 1: (0.25, 0.5)}
+        sim.advance(4, keys=(0, 0))
+        eyes.seen = {}  # blink, or the cameras stopped
+        sim.advance(4, keys=(0, 0))
+        self.assertAlmostEqual(sim.fc.yaw_deg, 0, delta=5)
+
+    def test_eye_cameras_stay_on_before_take_off_only_with_head_steering(self):
+        sim = Sim(self)
+        sim.transport.head, sim.transport.eyes = FakeHead(66.0), FakeEyes()
+        sim.advance(1)
+        self.assertEqual(sim.transport.eyes.reads, 0, "head steering off: cameras left alone")
+        sim.service.set_head_follow(sim.token, True)
+        sim.advance(1)
+        self.assertGreater(sim.transport.eyes.reads, 5, "on: kept running, so they see the eyes at take-off")
+
+    def test_eyes_do_nothing_with_head_steering_off(self):
+        sim, head, eyes = fly_with_head_and_eyes(self)
+        sim.service.set_head_follow(sim.token, False)
+        eyes.seen = {0: (0.0, 0.0), 1: (0.0, 0.0)}
+        sim.advance(3, keys=(0, 0))
+        self.assertAlmostEqual(sim.fc.yaw_deg, 0.0, delta=1)
+        self.assertEqual(sim.fc.mount_pitch, 0.0, "no tilt either")
+
+    def test_arrow_turns_keep_where_the_eyes_and_head_count_as_ahead(self):
+        sim, head, eyes = fly_with_head_and_eyes(self)
+        head.pitch, eyes.seen = -5.0 - 20, {0: (0.3, 0.5), 1: (0.25, 0.5)}  # looking down and right
+        for _ in range(int(1 / 0.05)):
+            sim.service.browser_heartbeat(sim.token, forward=0, right=0, yaw=45)
+            sim.advance(0.05)
+        sim.advance(0.3, keys=(0, 0))  # released: the heading re-centres here, eyes still right
+        head.pitch, eyes.seen = -5.0, {0: (0.5, 0.5), 1: (0.45, 0.5)}  # back to where they were at take-off
+        sim.advance(4, keys=(0, 0))
+        self.assertAlmostEqual(sim.transport.direction_status()["drone_offset"], 0, delta=5,
+                               msg="no eye turn left over from the arrow turn")
+        self.assertEqual(sim.fc.mount_pitch, 0.0, "camera level again")
+
+    def test_failing_eye_cameras_leave_head_steering_working(self):
+        sim, head, eyes = fly_with_head_and_eyes(self)
+
+        def broken(max_age):
+            raise RuntimeError("camera thread could not start")
+        eyes.pupils = broken
+        head.yaw = 66.0 + 30
+        sim.advance(4, keys=(0, 0))
+        self.assertAlmostEqual(sim.fc.yaw_deg, 30, delta=6)
+        self.assertEqual(sim.phase(), "FLY")
+        self.assertEqual(sim.service.status()["last_fault"], "NONE")
+
+
+class CameraTiltTests(unittest.TestCase):
+    """Looking up or down tilts the FPV camera gimbal while the drone hovers."""
+
+    def test_levels_the_camera_at_start_then_goes_quiet(self):
+        sim = Sim(self)
+        sim.transport.head = FakeHead(66.0, pitch=30.0)
+        sim.advance(5)
+        self.assertEqual(sim.fc.mount_pitch, 0.0, "an earlier run may have left it tilted: ArduPilot holds a tilt")
+        sent = sim.fc.mount_commands
+        self.assertLessEqual(sent, 5)
+        sim.advance(5)
+        self.assertEqual(sim.fc.mount_commands, sent, "level and settled: nothing more over the radio")
+
+    def test_looking_up_with_head_and_eyes_tilts_the_camera(self):
+        sim, head, eyes = fly_with_head_and_eyes(self)
+        head.pitch = -5.0 + 20
+        eyes.seen = {0: (0.5, 0.45), 1: (0.45, 0.45)}  # eyes a little up
+        sim.advance(1, keys=(0, 0))
+        self.assertEqual(sim.fc.mount_mode, 2, "MAVLink targeting")
+        self.assertAlmostEqual(sim.fc.mount_pitch, 20 + 3.75, delta=0.5)
+        self.assertEqual(sim.phase(), "FLY", "the drone keeps hovering")
+        self.assertAlmostEqual(sim.fc.height_m, 0.3, delta=0.1)
+
+    def test_looking_down_tilts_it_down_without_eye_cameras(self):
+        sim, head, _ = fly_with_head_and_eyes(self, eyes=False)
+        head.pitch = -5.0 - 25
+        sim.advance(1, keys=(0, 0))
+        self.assertAlmostEqual(sim.fc.mount_pitch, -25, delta=0.5)
+
+    def test_tilt_is_capped(self):
+        sim, head, eyes = fly_with_head_and_eyes(self)
+        head.pitch = 80.0
+        eyes.seen = {0: (0.5, 0.0), 1: (0.45, 0.0)}
+        sim.advance(1, keys=(0, 0))
+        self.assertEqual(sim.fc.mount_pitch, TILT_MAX_DEG)
+
+    def test_camera_levels_when_landing(self):
+        sim, head, eyes = fly_with_head_and_eyes(self)
+        head.pitch = -5.0 + 20
+        sim.advance(1, keys=(0, 0))
+        sim.service.land(sim.token, sim.next_seq())
+        sim.advance(1, keys=(0, 0))
+        self.assertEqual(sim.fc.mount_pitch, 0.0)
+
+    def test_steady_tilt_is_not_resent_every_tick(self):
+        sim, head, eyes = fly_with_head_and_eyes(self)
+        head.pitch = -5.0 + 20
+        sim.advance(1, keys=(0, 0))
+        before = sim.fc.mount_commands
+        sim.advance(5, keys=(0, 0))
+        self.assertLessEqual(sim.fc.mount_commands - before, 6, "about once a second while it holds")
+        self.assertGreaterEqual(sim.fc.mount_commands - before, 4, "repeated in case the radio dropped one")
 
 
 class MappingTests(unittest.TestCase):

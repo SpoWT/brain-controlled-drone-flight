@@ -17,10 +17,11 @@ from urllib.parse import urlsplit
 
 from flask import Flask, jsonify, render_template, request
 
-from assisted_flight_service import AssistedFlightService
-from assisted_flight_transport import AssistedSerialTransport
-from optical_eeg import LiveEEGService
-from optical_eeg_control import EEGFlightControl
+from drone_flight import ROOT
+from drone_flight.eeg.optical_eeg import LiveEEGService
+from drone_flight.eeg.optical_eeg_control import EEGFlightControl
+from drone_flight.flight.assisted_flight_service import AssistedFlightService
+from drone_flight.flight.assisted_flight_transport import AssistedSerialTransport
 
 
 EXPECTED_FIRMWARE_MARKER = "OPTICAL_HOVER_FLIGHT_V1"
@@ -29,7 +30,7 @@ EXPECTED_AIRCRAFT_FIRMWARE_SHA256 = (
 )
 EXPECTED_AIRCRAFT_VECTOR = "c00d002001010008a1390008352b0008"
 DEFAULT_AIRCRAFT_VERIFICATION_RECORD = (
-    Path(__file__).resolve().parent
+    ROOT
     / "hardware_backups"
     / "aircraft_2026-08-01_pre_optical"
     / "optical_hold_bench_verification.json"
@@ -621,7 +622,7 @@ class FlightControlService:
 def create_app(
     service: FlightControlService, *, eeg_service: Optional[LiveEEGService] = None
 ) -> Flask:
-    template_dir = Path(__file__).resolve().parent / "web" / "templates"
+    template_dir = Path(__file__).resolve().parent / "templates"
     app = Flask(__name__, template_folder=str(template_dir))
     eeg = eeg_service if eeg_service is not None else LiveEEGService()
     brain = EEGFlightControl(service, eeg, start_worker=service._thread is not None)

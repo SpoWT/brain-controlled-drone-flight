@@ -16,7 +16,7 @@ from pathlib import Path
 import joblib
 import numpy as np
 
-from bci_game_runtime import continuous_window
+from bci_game.runtime import continuous_window
 
 from . import labels
 from .config import MODEL_NAMES, SAMPLE_RATE, WINDOW_SAMPLES

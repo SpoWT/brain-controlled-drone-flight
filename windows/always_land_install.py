@@ -17,7 +17,7 @@ from pymavlink import mavutil  # noqa: E402
 from pymavlink.mavftp import MAVFTP  # noqa: E402
 from serial.tools import list_ports  # noqa: E402
 
-LOCAL = Path(__file__).resolve().parent / "always_land.lua"
+LOCAL = Path(__file__).resolve().parents[1] / "fc_scripts" / "always_land.lua"
 REMOTE = "/APM/scripts/always_land.lua"
 MAX_HGT_FLYING = 2.3
 

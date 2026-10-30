@@ -11,7 +11,7 @@ Modules in the final build. The frame, gear and goggle shells are 3D printed (th
 | Motors | X3115 900KV brushless (DYS) | 4 | Propulsion |
 | Propellers | 5-inch two-blade | 4 (2 CW, 2 CCW) | Thrust |
 | Battery | OVONIC FPV 6S 22.2 V 1300 mAh 130C, XT60 | 1 | Flight power |
-| Optical flow + rangefinder | MicoAir MTF-01P | 1 | Floor motion and height for indoor hover |
+| Optical flow + rangefinder | MicoAir MTF-01P | 1 | Ground motion and height, to hold position without GPS |
 | FPV camera | JINJIEAN B19 Pro, analog | 1 | Video from the drone |
 | Video transmitter | 5.8 GHz analog, 2000 mW, fan-cooled, with antenna | 1 | Sends the video to the goggles |
 | Telemetry radio, air | YoungRC 915 MHz 100 mW SiK (HM-TRP) | 1 | MAVLink link to the laptop |

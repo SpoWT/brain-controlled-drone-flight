@@ -15,7 +15,7 @@ import re
 import shutil
 from pathlib import Path
 
-from bci_game_runtime import BUNDLE_FORMAT, MANIFEST, file_sha256
+from bci_game.runtime import BUNDLE_FORMAT, MANIFEST, file_sha256
 
 CODE_SOURCE = Path(__file__).resolve().parent / "ml"
 NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$")

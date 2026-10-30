@@ -5,7 +5,7 @@ import unittest
 import cv2
 import numpy as np
 
-from goggle_pupil import detect_pupil
+from drone_flight.head.goggle_pupil import detect_pupil
 
 
 def eye(width, height):

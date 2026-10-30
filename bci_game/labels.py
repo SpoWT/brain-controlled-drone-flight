@@ -10,7 +10,7 @@ from statistics import median
 
 import numpy as np
 
-from bci_game_runtime import continuous_window
+from bci_game.runtime import continuous_window
 
 from .config import GO, SAMPLE_RATE, STOP, TRAIN_STEP_S, WINDOW_S
 

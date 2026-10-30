@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 from typing import Final
 
-from bci_game_runtime import bundle_roots
+from bci_game.runtime import bundle_roots
 
 PROJECT_ROOT: Final[Path] = Path(__file__).resolve().parents[1]
 RECORDINGS_DIR: Final[Path] = Path(os.environ.get("BCI_GAME_RECORDINGS", PROJECT_ROOT / "eeg_recordings"))

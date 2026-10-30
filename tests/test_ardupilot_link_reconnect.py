@@ -2,7 +2,7 @@
 import time
 import unittest
 
-from ardupilot_link import ArduPilotLink
+from drone_flight.flight.ardupilot_link import ArduPilotLink
 
 
 class BlippingRadio:

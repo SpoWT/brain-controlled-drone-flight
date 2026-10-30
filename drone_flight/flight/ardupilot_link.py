@@ -243,9 +243,13 @@ class ArduPilotLink:
     def disarm(self, force: bool = False) -> None:
         self._command_long(400, 0, FORCE_DISARM_MAGIC if force else 0)
 
-    def _command_long(self, command: int, p1: float = 0, p2: float = 0) -> None:
-        self._send(lambda: self._conn.mav.command_long_send(
-            FC_SYSTEM_ID, FC_COMPONENT_ID, command, 0, p1, p2, 0, 0, 0, 0, 0))
+    def mount_tilt(self, degrees: float) -> None:
+        """Camera gimbal tilt (+ = up) with ArduPilot's mount driver: MAV_CMD_DO_MOUNT_CONTROL, MAVLink targeting."""
+        self._command_long(205, degrees, 0, 0, 0, 0, 0, 2)
+
+    def _command_long(self, command: int, *params: float) -> None:
+        p = [float(value) for value in params] + [0.0] * (7 - len(params))
+        self._send(lambda: self._conn.mav.command_long_send(FC_SYSTEM_ID, FC_COMPONENT_ID, command, 0, *p))
 
     def close(self) -> None:
         self._stop.set()

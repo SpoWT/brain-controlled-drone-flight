@@ -51,6 +51,9 @@ class FakeMav:
             return
         if cmd == 400:
             self.fc.arm_request(bool(p1), p2 == 21196)
+        if cmd == 205:  # MAV_CMD_DO_MOUNT_CONTROL: pitch in p1, mount mode in p7
+            self.fc.mount_pitch, self.fc.mount_mode = p1, rest[4]
+            self.fc.mount_commands += 1
 
 
 class FakeConnection:
@@ -96,6 +99,8 @@ class FakeArduPilot:
         self.yaw_deg = 0.0             # heading; the yaw stick turns it at PILOT_Y_RATE (202.5 deg/s full stick)
         self.yaw_drift_deg_s = 0.0     # heading creeps on its own in the air (gyro drift, no compass)
         self.flow_alive = True         # False: no OPTICAL_FLOW messages at all
+        self.mount_pitch = self.mount_mode = None  # camera gimbal, from DO_MOUNT_CONTROL
+        self.mount_commands = 0
         self._height_hist = []
         self._now = 0.0
 

@@ -4,7 +4,7 @@ import unittest
 
 from types import SimpleNamespace as NS
 
-from head_follow import NO_ADAPTER, HeadFollow, HeadSensorWatch, parse_rvc_packet, scan
+from drone_flight.head.head_follow import NO_ADAPTER, HeadFollow, HeadSensorWatch, parse_rvc_packet, scan
 
 
 def rvc(yaw_deg, pitch_deg=0.0, roll_deg=0.0, index=1):

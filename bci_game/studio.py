@@ -13,7 +13,7 @@ from typing import Callable
 
 import numpy as np
 
-from bci_game_runtime import continuous_window
+from bci_game.runtime import continuous_window
 
 from . import bundles, labels, session, train
 from .config import (ALLOWED_RIDE_MINUTES, BUNDLES_DIR, GO, LIVE_STEP_S, QUALITY_WINDOW_S, RECORDINGS_DIR,
@@ -31,7 +31,7 @@ class StudioError(RuntimeError):
 
 
 def _default_runtime(folder: Path):
-    from bci_game_runtime import BCIGameStopGoRuntime
+    from bci_game.runtime import BCIGameStopGoRuntime
 
     return BCIGameStopGoRuntime(folder)
 

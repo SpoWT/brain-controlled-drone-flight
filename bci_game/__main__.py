@@ -62,7 +62,7 @@ def _train(args) -> int:
 
 
 def _check(args) -> int:
-    from bci_game_runtime import BCIGameStopGoRuntime
+    from bci_game.runtime import BCIGameStopGoRuntime
 
     runtime = BCIGameStopGoRuntime(args.bundle)
     window = np.random.default_rng(0).normal(0, 10, (runtime.WINDOW_SAMPLES, runtime.CHANNELS))

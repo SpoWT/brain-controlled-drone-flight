@@ -26,7 +26,7 @@ from bci_game.ml.inference import InferenceEngine, window_quality
 from bci_game.server import create_app
 from bci_game.stream import GanglionSource, SourceError
 from bci_game.studio import LiveDecoder, Studio, StudioError
-from bci_game_runtime import BCIGameStopGoRuntime, find_bundles, read_bundle, verify_bundle
+from bci_game.runtime import BCIGameStopGoRuntime, find_bundles, read_bundle, verify_bundle
 
 PROJECT = Path(__file__).resolve().parents[1]
 
@@ -558,7 +558,7 @@ def handle(board, rate=SAMPLE_RATE):
 def test_ganglion_source_reads_the_shared_connection(monkeypatch):
     chunk = np.vstack([np.arange(3), np.ones((4, 3)) * [[1], [2], [3], [4]], T0 + np.arange(3) / SAMPLE_RATE])
     board = FakeBoard([chunk])
-    monkeypatch.setattr("bci_v2.acquisition.connect", lambda simulate: handle(board))
+    monkeypatch.setattr("bci_game.acquisition.connect", lambda simulate: handle(board))
     source = GanglionSource.connect()
     eeg, stamps = source.read()
     assert eeg.shape == (3, 4) and eeg[0].tolist() == [1, 2, 3, 4] and stamps[0] == T0
@@ -570,7 +570,7 @@ def test_ganglion_source_reads_the_shared_connection(monkeypatch):
 
 def test_a_board_at_the_wrong_rate_is_released(monkeypatch):
     board = FakeBoard([])
-    monkeypatch.setattr("bci_v2.acquisition.connect", lambda simulate: handle(board, rate=250))
+    monkeypatch.setattr("bci_game.acquisition.connect", lambda simulate: handle(board, rate=250))
     with pytest.raises(SourceError):
         GanglionSource.connect()
     assert board.calls == ["stop_stream", "release_session"]

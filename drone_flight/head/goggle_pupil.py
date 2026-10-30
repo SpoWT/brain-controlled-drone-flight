@@ -14,6 +14,8 @@ from typing import Optional
 import cv2
 import numpy as np
 
+from drone_flight import ROOT
+
 AIM_BOX_WIDTH = 0.70   # fraction of frame width searched around the aim point
 AIM_BOX_HEIGHT = 0.42  # fraction of frame height
 FULL_FRAME_MARGIN = 0.04
@@ -32,7 +34,7 @@ def _clahe():
     if not hasattr(_LOCAL, "clahe"):
         _LOCAL.clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
     return _LOCAL.clahe
-IRIS_MODEL_PATH = Path(__file__).resolve().parent / "models" / "iris_landmark.tflite"
+IRIS_MODEL_PATH = ROOT / "models" / "iris_landmark.tflite"
 IRIS_CROP_FRACTION = 0.55  # square eye crop side, fraction of frame width
 IRIS_MIN_DARKNESS = 35.0   # gray levels darker than the search box median
 

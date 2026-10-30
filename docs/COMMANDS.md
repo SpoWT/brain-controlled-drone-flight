@@ -1,6 +1,6 @@
 # Drone Command Reference
 
-ArduCopter 4.7.1 on a CORVON743V1, flown indoors from a Windows laptop over a 915 MHz SiK radio.
+ArduCopter 4.7.1 on a CORVON743V1, flown indoors and outdoors from a Windows laptop over a 915 MHz SiK radio.
 Position from optical flow, height from a laser. No GPS, no compass.
 
 ## 1. Hardware
@@ -17,8 +17,10 @@ Position from optical flow, height from a laser. No GPS, no compass.
 
 ## 2. Starting
 
-- **Drone App** (desktop icon): restarts the website and the flight controller (only when disarmed), opens the flying page in its own window, records until **STOP RECORDING**.
-- **Manual:** `python ardupilot_assisted_web.py --port 8083`, then open `http://127.0.0.1:8083`. `--mavlink COM7` only says where to look first.
+- **Drone App** (desktop icon): while disarmed, closes the flying page it opened before, restarts the website and the
+  flight controller, then opens the flying page in its own window. While armed or flying it changes nothing and says
+  to use the open page (opening another page would land the drone).
+- **Manual:** `python -m drone_flight --port 8083`, then open `http://127.0.0.1:8083`. `--mavlink COM7` only says where to look first.
 - The website only answers on `127.0.0.1`.
 - Opening the page starts a new control session. Any page opened earlier loses control.
 - Before take-off: drone flat on the floor, laser reading, tick the confirmation box.
@@ -33,7 +35,7 @@ Position from optical flow, height from a laser. No GPS, no compass.
 | `←` / `→` | Turn on the spot, 45 °/s |
 | `SPACE` | Stop and hover |
 | `L` | Land |
-| `C` | Recentre head: where the goggles face now = straight ahead |
+| `C` | Recentre head: where the goggles face and the eyes look now = straight ahead |
 | ARM & TAKE OFF | Arm in LOITER (ALT_HOLD if refused), climb to the take-off height (0.3–2.0 m, default 0.3) |
 | GO FORWARD | Fly the set distance straight ahead (0.1–5.0 m, default 2.0), then hover |
 | STOP & HOVER | Stop and hold position |
@@ -44,6 +46,15 @@ Keys only work while the flying page has focus. Releasing a key brakes and holds
 
 **Head steering** (on by default): the drone's heading follows the goggles' yaw.
 Deadband 4°, 1.5 °/s per degree of difference, max 45 °/s. Arrow keys override it. Re-centred at every take-off.
+
+**Eye steering** (with head steering): looking left or right with the eyes adds up to 15° to the head's heading
+(pupil moved 0.2 of the eye camera picture = 15°). Looking up or down with the head and eyes tilts the FPV camera
+gimbal up to 30° either way instead of moving the drone. Both work while hovering or flying on keys or EEG, not
+during GO FORWARD, take-off or landing; then the camera is level. Each eye uses the median of its last 0.5 s of
+pupil positions, so blinks are ignored, and moves under 0.03 of the picture count as straight ahead. With the eyes
+closed or the eye cameras off, only the head steers. Straight ahead for the eyes and head tilt is set at take-off and
+by `C`; an arrow turn keeps it. Turning an eye picture in flight leaves that eye out until `C`. The eye cameras stay
+on while head steering is on. The website levels the camera when it starts: ArduPilot keeps the last tilt it was sent.
 
 **EEG STOP / GO** ("Use EEG STOP / GO alongside computer controls"): GO flies forward at 0.2 m/s while GO
 decisions keep arriving (0.5 s). Anything else hovers. STOP, LAND, motor cut or a measured move turns it off.
@@ -62,7 +73,8 @@ not loaded. Restart the website after training.
 | Target height | 0.3–2.0 m |
 | Hard ceiling | 2.3 m |
 | Horizontal speed | 0.4 m/s max |
-| Turn rate | 45 °/s from keys or head |
+| Turn rate | 45 °/s from keys, head or eyes |
+| Camera tilt | 30° up or down |
 | Measured move | 5 m max |
 | Flight time | 180 s, then it lands |
 | Take-off battery | 22.2 V min |
@@ -135,7 +147,7 @@ Commands carry an increasing `sequence` number.
 |---|---|---|---|
 | GET | `/` | | Flying page. Starts a new control session |
 | GET | `/launcher-health` | | Service up, mode, blocker |
-| GET | `/api/checkup` | `?recording=<s>` | Full read-only status and connection checks |
+| GET | `/api/checkup` | | Full read-only status and connection checks |
 | GET | `/api/status` | | Flight state (T) |
 | POST | `/api/heartbeat` | `forward, right, yaw, target_mm` | Key state every 80 ms, mm/s and °/s (T) |
 | POST | `/api/arm` | `sequence, target_mm` | Arm and take off (T) |
@@ -145,8 +157,8 @@ Commands carry an increasing `sequence` number.
 | POST | `/api/land` | `sequence` | Land (T) |
 | POST | `/api/emergency-lock` | | Motor cut (T) |
 | POST | `/api/head` | `enabled` | Head steering on / off (T) |
-| POST | `/api/head/recenter` | | Head = straight ahead (T) |
-| GET | `/api/direction` | | Head and drone heading, turn rate |
+| POST | `/api/head/recenter` | | Head and eyes = straight ahead (T) |
+| GET | `/api/direction` | | Head and drone heading, turn rate, eye turn, camera tilt |
 | GET | `/api/eyes` | | Eye camera status, pupil size and position |
 | POST | `/api/eyes/<n>/rotate` | `by: 90 / -90 / 180` | Rotate an eye camera view |
 | GET | `/eyes/<n>.mjpg` | | Eye camera video |
@@ -204,12 +216,17 @@ Stick scaling: full yaw = 202.5 °/s (`PILOT_Y_RATE`), full LOITER stick = 0.6 m
 | `SCR_ENABLE` | 1 |
 | `BATT_ARM_VOLT` | 22.2 |
 | `ALAND_ENABLE` / `ALAND_MAX_HGT` / `ALAND_TILT` / `ALAND_ATT_ERR` / `ALAND_TEST` | 1 / 2.3 / 25 / 6 / 0 |
+| `MNT1_TYPE` | 1 (servo gimbal) |
+| `SERVOx_FUNCTION` on the gimbal tilt servo's output | 7 (Mount1Pitch) |
+| `MNT1_PITCH_MIN` / `MNT1_PITCH_MAX` | -30 / 30 |
+| `SERVOx_MIN` / `SERVOx_MAX` on that output | PWM where the camera points 30° down / 30° up |
 
 `ALAND_*` come from `/APM/scripts/always_land.lua`. `ALAND_TEST 1` only reports, never acts.
+Camera level is halfway between `SERVOx_MIN` and `SERVOx_MAX`; `SERVOx_TRIM` does not move it.
 
 ## 11. Connection lights
 
-Shown at the top of the flying page: RADIO, DRONE, BATT, FC, LASER, FLOOR CAM, HEAD, EYES, EEG, REC.
+Shown at the top of the flying page: RADIO, DRONE, BATT, FC, LASER, FLOOR CAM, HEAD, EYES, EEG.
 Green = fine, amber = check, red = fix now. Hover over a light for the fix.
 Devices are found by what they send, never by COM number (the radio and head sensor adapters can swap COM
 numbers with plug order):
@@ -220,16 +237,6 @@ numbers with plug order):
 - **Eye cameras:** EYE 1 / EYE 2 follow the USB port each camera sits on inside the goggles (lower port = EYE 1),
   so re-plugging the goggles anywhere keeps them and their rotation. One camera is never shown in both slots.
 
-## 12. Recordings
+## 12. Logs
 
-The Drone App saves one folder per session in `Videos\Drone recordings\<date time>\`:
-
-| File | Contents |
-|---|---|
-| `screen_001.mp4` … | Flying page window, 8 fps, a new file every 5 min |
-| `data.jsonl` | Full status 4 times a second |
-| `events.txt` | Timeline: take-off, landing, faults, devices lost or found |
-| `drone_mavlink.jsonl` | Every MAVLink message received during the session |
-| `session.json` | Start, end, files |
-
-The website also logs every MAVLink message to `outputs/mavlink_logs/mav_<time>.jsonl`.
+The website logs every MAVLink message to `outputs/mavlink_logs/mav_<time>.jsonl`.

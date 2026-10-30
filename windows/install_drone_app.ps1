@@ -1,8 +1,7 @@
-# Installs the "DRONE APP" desktop icon and its scheduled tasks. App files: $env:USERPROFILE\NeuralFlightWeb\drone_app
+# Installs the "DRONE APP" desktop icon and its scheduled tasks for this copy of the repo.
 $ErrorActionPreference = "Stop"
-$app = "$env:USERPROFILE\NeuralFlightWeb\drone_app"
-$audit = "$env:USERPROFILE\NeuralFlightAudit"
-foreach ($need in "$app\drone_app.pyw", "$app\make_icon.py", "$audit\key_flight_job.ps1") {
+$app = Join-Path $PSScriptRoot "drone_app"
+foreach ($need in "$app\drone_app.pyw", "$app\make_icon.py", "$PSScriptRoot\key_flight_job.ps1") {
     if (-not (Test-Path $need)) { throw "missing $need (see Windows setup in README.md)" }
 }
 $found = Get-Command python -ErrorAction SilentlyContinue
@@ -12,7 +11,6 @@ $pyw = Join-Path (Split-Path $py) "pythonw.exe"
 if (-not (Test-Path $pyw)) { throw "pythonw.exe not found next to $py" }
 & $py "$app\make_icon.py" "$app\drone.ico"
 if ($LASTEXITCODE -ne 0) { throw "make_icon.py failed (exit $LASTEXITCODE)" }
-New-Item -ItemType Directory -Force "$env:USERPROFILE\Videos\Drone recordings" | Out-Null
 $shell = New-Object -ComObject WScript.Shell
 $path = Join-Path ([Environment]::GetFolderPath("Desktop")) "DRONE APP.lnk"
 $link = $shell.CreateShortcut($path)
@@ -20,12 +18,12 @@ $link.TargetPath = $pyw
 $link.Arguments = "`"$app\drone_app.pyw`""
 $link.WorkingDirectory = $app
 $link.IconLocation = "$app\drone.ico,0"
-$link.Description = "Flying page as an app: starts everything and records the whole session"
+$link.Description = "Starts the flying website and opens the flying page"
 $link.Save()
 # Elevated task: restart the website and reboot the FC, no browser page.
 $elevated = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Highest
 $short = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
-$job = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$audit\key_flight_job.ps1`" -NoPage"
+$job = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$PSScriptRoot\key_flight_job.ps1`" -NoPage"
 Register-ScheduledTask -TaskName "NeuralFlightAppStart" -Action $job -Principal $elevated -Settings $short -Force | Out-Null
 # Task that opens the app in the user's desktop session.
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Hours 12)

@@ -5,7 +5,7 @@ import unittest
 from types import SimpleNamespace
 from unittest import mock
 
-from bci_v2 import acquisition
+from bci_game import acquisition
 
 
 def port(device, description="", vid=None, pid=None):

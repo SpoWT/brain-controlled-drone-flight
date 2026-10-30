@@ -1,73 +1,110 @@
-# Drone Flight
+# Brain-Controlled Drone Flight
 
-Indoor flight control for an ArduPilot quadcopter from a Windows laptop: keyboard, head steering and
-EEG STOP / GO, with automatic landing on the laptop and on the flight controller. Includes the BCI game
-that records your own STOP / GO EEG and trains the model the drone flies with.
+Fly a drone with your brain and eyes.
 
-See [docs/COMMANDS.md](docs/COMMANDS.md) for controls, limits, safety rules, the API and the MAVLink setup,
-and [docs/BCI_GAME.md](docs/BCI_GAME.md) for recording and training.
+## How it works
 
-## Safety
+- **Flying website** (`drone_flight/`) runs on the laptop at `http://127.0.0.1:8083` and flies an ArduPilot drone
+  over a SiK radio. Turning your head in the FPV goggles steers the drone. Cameras inside the goggles track your
+  pupils, so looking left or right with your eyes turns it a little more. Looking up or down tilts the camera gimbal
+  instead of moving the drone. Your EEG decides STOP or GO. It lands the drone by itself if the radio or laser is
+  lost or the drone stops following its commands.
+- **BCI game** (`bci_game/`) records your STOP / GO EEG while you drive, trains six kinds of model, and saves the
+  best one to `eeg_bundles/` for the website. No brain data is included: you train your own.
+- **Landing script** (`fc_scripts/always_land.lua`) runs on the flight controller and lands the drone even when
+  the laptop or radio is gone.
+- **Drone App** (`windows/drone_app/`) is a Windows desktop icon that starts the website and opens the flying page.
 
-Experimental research code, not a certified flight system or a medical device. Use it at your own risk.
-Test new changes with the props off, fly indoors with no one near the drone, and keep a hand on the
-EMERGENCY MOTOR CUT button. 
+## What you need
 
-## Layout
+- A 5-inch ArduPilot quadcopter with a MicoAir MTF-01P (optical flow and laser), a SiK radio pair, an analog
+  FPV camera and video transmitter, and a servo to tilt the camera
+- FPV goggles with a BNO085 head sensor and two eye cameras
+- An OpenBCI Ganglion with a BLED112 dongle
+- A Windows laptop with Python 3.12
 
-| Path | Contents |
-|---|---|
-| `ardupilot_assisted_web.py` | Entry point: website + flight transport on the SiK radio |
-| `ardupilot_flight_transport.py`, `ardupilot_link.py` | Flight logic and MAVLink link |
-| `follow_guard.py`, `runaway_guard.py`, `height_planner.py`, `flight_sticks.py` | Safety checks and stick math |
-| `assisted_flight_service.py`, `optical_hover_web.py` | Flight service and Flask routes |
-| `head_follow.py`, `eye_cameras.py`, `goggle_pupil.py` | Head steering and goggle eye cameras |
-| `serial_devices.py` | Finds the radio and head sensor by what they send |
-| `optical_eeg.py`, `optical_eeg_control.py`, `saved_eeg_models.py`, `bci_game_runtime.py` | EEG STOP / GO |
-| `bci_v2/acquisition.py` | OpenBCI Ganglion connection |
-| `bci_game/` | BCI game: records labelled STOP / GO EEG, trains models into `eeg_bundles/` |
-| `checkup_feed.py`, `drone_checks.py`, `dashboard_feeds.py` | Status feeds and connection lights |
-| `web/templates/optical_hover.html` | Flying page |
-| `drone_app/` | Windows desktop app: opens the page and records sessions |
-| `fc_scripts/always_land.lua` | Flight controller script (`/APM/scripts`) |
-| `windows/` | Laptop setup and maintenance scripts |
-| `hardware/` | Printed drone frames, goggles and head gear, and the parts list ([PARTS.md](hardware/PARTS.md)) |
-| `tests/` | Unit tests |
+The full parts list is in [hardware/PARTS.md](hardware/PARTS.md). The frame, goggles and head gear are 3D printed:
+see [hardware/](hardware/README.md).
 
-## Run
+## Setup
+
+### 1. Laptop
 
 ```
+git clone https://github.com/SpoWT/brain-controlled-drone-flight.git
+cd brain-controlled-drone-flight
 pip install -r requirements.txt
-python ardupilot_assisted_web.py --port 8083   # finds the radio on any port
 ```
 
-Open `http://127.0.0.1:8083`.
+For better pupil tracking, put the MediaPipe iris model at `models/iris_landmark.tflite` (optional).
 
-To fly with your own EEG model, first record and train with the BCI game (`http://127.0.0.1:8790`):
+### 2. Flight controller
+
+1. Flash ArduCopter 4.7.1.
+2. Set the parameters in [docs/COMMANDS.md §10](docs/COMMANDS.md#10-flight-controller-settings), including the camera
+   gimbal on the tilt servo's output. The compass stays off.
+3. Plug the flight controller in by USB and install the landing script:
+
+   ```
+   python windows/always_land_install.py
+   ```
+
+### 3. Train your STOP / GO model
 
 ```
 python -m bci_game
 ```
 
-Optional files, not in the repo:
-- `models/iris_landmark.tflite` (MediaPipe iris model) for pupil detection. Without it the classic detector is used.
-- `eeg_recordings/` and `eeg_bundles/`: your rides and trained STOP / GO models, written by the BCI game.
-  They hold your brain data: keep them out of uploads.
+Open `http://127.0.0.1:8790`, connect the Ganglion, drive at least two rides, then train. The best model is saved
+to `eeg_bundles/`. Electrode placement and training details: [docs/BCI_GAME.md](docs/BCI_GAME.md).
 
-## Windows setup
+Your rides (`eeg_recordings/`) and models (`eeg_bundles/`) hold your brain data. Git ignores both folders, so they
+stay out of uploads.
 
-Repo in `$env:USERPROFILE\NeuralFlightWeb`, the `windows/` scripts and `fc_scripts/always_land.lua` in
-`$env:USERPROFILE\NeuralFlightAudit`. Then, from an admin PowerShell:
+### 4. Fly
 
 ```
-powershell -ExecutionPolicy Bypass -File "$env:USERPROFILE\NeuralFlightAudit\install_drone_app.ps1"
+python -m drone_flight --port 8083
+```
+
+Open `http://127.0.0.1:8083`. The website finds the radio on any port. Controls, limits and automatic landings:
+[docs/COMMANDS.md](docs/COMMANDS.md).
+
+### 5. Desktop app (optional)
+
+From an admin PowerShell in the repo folder:
+
+```
+powershell -ExecutionPolicy Bypass -File windows\install_drone_app.ps1
 ```
 
 This adds the DRONE APP desktop icon.
 
+## Safety
+
+This is not a certified flight system or a medical device. Use it at your own risk.
+Test new changes with the props off, keep people away from the drone, and keep a hand on the EMERGENCY MOTOR CUT
+button.
+
+## Project layout
+
+| Folder | Contents |
+|---|---|
+| `drone_flight/` | Flying website: `flight/` (ArduPilot link, flight logic, safety guards), `head/` (head steering, eye cameras), `eeg/` (live STOP / GO), `web/` (routes, status feeds, flying page) |
+| `bci_game/` | BCI game, model training, and the model runtime and Ganglion connection the website uses |
+| `fc_scripts/` | Flight controller landing script |
+| `windows/` | Drone App, install and start / stop scripts, flight controller tools |
+| `hardware/` | Printed parts and the parts list |
+| `docs/` | Command reference and BCI game reference |
+| `tests/` | Tests |
+
 ## Tests
 
 ```
-python -m pytest tests
+python -m pytest
 node --test tests/road.test.mjs
 ```
+
+## License
+
+MIT. See [LICENSE](LICENSE).

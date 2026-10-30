@@ -4,7 +4,7 @@ from types import SimpleNamespace as NS
 
 from flask import Flask
 
-from checkup_feed import UsbPorts, battery, create_checkup_blueprint
+from drone_flight.web.checkup_feed import UsbPorts, battery, create_checkup_blueprint
 
 
 class FakeLink:
@@ -112,7 +112,7 @@ class CheckupTests(unittest.TestCase):
         self.assertEqual(battery(FakeLink(NS(voltage_battery=22000, battery_remaining=40))), {"volts": 22.0, "percent": 40})
 
     def test_no_head_sensor(self):
-        from checkup_feed import head
+        from drone_flight.web.checkup_feed import head
         self.assertEqual(head(NS(head=None)), {"found": False, "note": ""})
         self.assertEqual(head(NS(head=None), NS(note="COM7 sends unreadable data"))["note"], "COM7 sends unreadable data")
 

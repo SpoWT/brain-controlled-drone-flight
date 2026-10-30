@@ -2,7 +2,7 @@
 import unittest
 from types import SimpleNamespace as NS
 
-from follow_guard import FollowGuard
+from drone_flight.flight.follow_guard import FollowGuard
 
 
 def run(guard, check, seconds, step=0.1, **kw):

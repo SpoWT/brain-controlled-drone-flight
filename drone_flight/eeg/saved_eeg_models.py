@@ -1,4 +1,4 @@
-"""The flying website's EEG model catalog: trained STOP / GO bundles found by bci_game_runtime.
+"""The flying website's EEG model catalog: trained STOP / GO bundles found by bci_game.runtime.
 
 A local ``extra_eeg_models`` module, if present, can add more models (it is not part of the repo).
 """
@@ -19,7 +19,8 @@ for _booster in ("xgboost", "lightgbm"):
     except Exception:  # not installed or not loadable: nothing to order
         pass
 
-from bci_game_runtime import bundle_roots, find_bundles  # noqa: E402
+from bci_game.runtime import bundle_roots, find_bundles  # noqa: E402
+from drone_flight import ROOT  # noqa: E402
 
 try:
     import extra_eeg_models
@@ -28,7 +29,6 @@ except ModuleNotFoundError as exc:
         raise
     extra_eeg_models = None
 
-ROOT = Path(__file__).resolve().parent
 AUTO_MODEL_ID = "auto"
 BUNDLE_PREFIX = "bundle-"
 DEFAULT_STOP_THRESHOLD = 0.5
@@ -222,7 +222,7 @@ class SavedEEGModels:
     def load(self, model_id):
         spec = self.selected(model_id)
         if spec["kind"] == "bundle":
-            from bci_game_runtime import BCIGameStopGoRuntime
+            from bci_game.runtime import BCIGameStopGoRuntime
             return BCIGameStopGoRuntime(spec["bundle"])
         if extra_eeg_models is None:
             raise ValueError("No loader for this model")

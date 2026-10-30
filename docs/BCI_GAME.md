@@ -149,14 +149,14 @@ A bundle runs its own code: only load bundles you trained or trust.
 | Path | Contents |
 |---|---|
 | `bci_game/server.py`, `studio.py` | HTTP routes; headset, rides, drive decoder and training job |
-| `bci_game/stream.py` | Ganglion (via `bci_v2/acquisition.py`) and simulator sources, background reader |
+| `bci_game/stream.py` | Ganglion (via `bci_game/acquisition.py`) and simulator sources, background reader |
 | `bci_game/session.py`, `labels.py`, `dsp.py` | Ride storage, window labels, signal check |
 | `bci_game/dataset.py` | Rides to labelled, ASR-cleaned windows |
 | `bci_game/models.py`, `train.py` | The six models and how each is trained; the comparison and the saved best |
 | `bci_game/bundles.py` | Bundle folders |
 | `bci_game/ml/` | Window features, Random Forest features, networks, ASR and inference; copied into every bundle |
 | `bci_game/static/`, `templates/` | Game page and 3D road (three.js) |
-| `bci_game_runtime.py` | Finds, verifies and runs bundles (flying website and drive mode) |
+| `bci_game/runtime.py` | Finds, verifies and runs bundles (flying website and drive mode) |
 
 ## 10. HTTP API
 

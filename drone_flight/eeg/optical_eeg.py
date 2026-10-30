@@ -13,11 +13,12 @@ from typing import Callable, Optional
 
 import numpy as np
 
-from bci_game_runtime import MAX_SAMPLE_GAP_S, continuous_window
-from saved_eeg_models import AUTO_MODEL_ID, SavedEEGModels
+from bci_game.runtime import MAX_SAMPLE_GAP_S, continuous_window
+from drone_flight import ROOT
+from drone_flight.eeg.saved_eeg_models import AUTO_MODEL_ID, SavedEEGModels
 
 
-DEFAULT_SETTINGS = Path(__file__).resolve().parent / "output" / "optical_eeg_settings.json"
+DEFAULT_SETTINGS = ROOT / "output" / "optical_eeg_settings.json"
 LOGGER = logging.getLogger(__name__)
 NO_MODEL_MESSAGE = "No STOP / GO model: put a trained bundle in eeg_bundles/"
 NO_MODEL = {"id": None, "label": "No STOP / GO model", "group": "STOP / GO", "kind": "none",
@@ -343,7 +344,7 @@ class LiveEEGService:
             self._closed.wait(self.INFERENCE_INTERVAL)
 
     def _worker(self) -> None:
-        from bci_v2.acquisition import connect, read_chunk, release, to_eeg_matrix
+        from bci_game.acquisition import connect, read_chunk, release, to_eeg_matrix
 
         while not self._closed.is_set():
             with self._lock:

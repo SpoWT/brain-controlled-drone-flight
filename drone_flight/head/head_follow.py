@@ -1,4 +1,4 @@
-"""Head steering: the drone's heading follows the VR headset's yaw.
+"""Head steering: the drone's heading follows the VR headset's yaw, plus a little from the eyes (eye_steering.py).
 
 The headset's BNO08x sends UART-RVC packets (19 bytes: 0xAA 0xAA, index, yaw/pitch/roll x100, accel,
 checksum; ~100 Hz) through a CP2102 USB adapter. It is found by those packets on any USB adapter, never by
@@ -12,7 +12,8 @@ import threading
 import time
 from typing import Callable, Iterable, Optional, Union
 
-from serial_devices import SCAN_LOCK, usb_uart_ports
+from drone_flight.flight.serial_devices import SCAN_LOCK, usb_uart_ports
+from drone_flight.head.eye_steering import EYE_FRESH_S, HEAD_PITCH_SIGN, tilt_for
 
 RVC_BAUD = 115200
 RVC_PACKET_BYTES = 19
@@ -58,10 +59,11 @@ class HeadFollow:
     def clear(self) -> None:
         self._zero = None
 
-    def rate(self, head_yaw: Optional[float], drone_yaw: Optional[float]) -> int:
+    def rate(self, head_yaw: Optional[float], drone_yaw: Optional[float], eyes_deg: float = 0.0) -> int:
+        """eyes_deg: how far right of the head the eyes look (degrees to add to the heading)."""
         if self._zero is None or head_yaw is None or drone_yaw is None:
             return 0
-        wanted = self._zero[1] + wrap_deg(head_yaw - self._zero[0])
+        wanted = self._zero[1] + wrap_deg(head_yaw - self._zero[0]) + eyes_deg
         error = wrap_deg(wanted - drone_yaw)
         if abs(error) < FOLLOW_DEADBAND_DEG:
             return 0
@@ -69,7 +71,8 @@ class HeadFollow:
 
 
 class HeadYawReader:
-    """Reads the head yaw in the background; latest(max_age) returns degrees or None."""
+    """Reads the head yaw and pitch in the background; latest(max_age) and latest_pitch(max_age) return degrees
+    or None."""
 
     def __init__(self, port: str, *, opener: Optional[Callable] = None,
                  clock: Callable[[], float] = time.monotonic) -> None:
@@ -79,17 +82,23 @@ class HeadYawReader:
         self.port, self._opener, self._clock = port, opener, clock
         self._lock = threading.Lock()
         self._stop = threading.Event()
-        self._reading: Optional[tuple[float, float]] = None  # (yaw, time)
+        self._reading: Optional[tuple[float, float, float]] = None  # (yaw, pitch, time)
         self.error = ""
         self._thread = threading.Thread(target=self._run, name="head-yaw", daemon=True)
         self._thread.start()
 
     def latest(self, max_age: float) -> Optional[float]:
+        return self._fresh(max_age, 0)
+
+    def latest_pitch(self, max_age: float) -> Optional[float]:
+        return self._fresh(max_age, 1)
+
+    def _fresh(self, max_age: float, angle: int) -> Optional[float]:
         with self._lock:
             reading = self._reading
-        if reading is None or self._clock() - reading[1] > max_age:
+        if reading is None or self._clock() - reading[2] > max_age:
             return None
-        return reading[0]
+        return reading[angle]
 
     def close(self) -> None:
         self._stop.set()
@@ -116,7 +125,7 @@ class HeadYawReader:
                     del buffer[:start + 1]
                     continue
                 with self._lock:
-                    self._reading = (angles[0], self._clock())
+                    self._reading = (angles[0], angles[1], self._clock())
                 del buffer[:start + RVC_PACKET_BYTES]
             del buffer[:-RVC_PACKET_BYTES]
 
@@ -141,7 +150,7 @@ def adapter_ports(exclude: Iterable[str] = ()) -> list[str]:
 
 def listen(port: str, seconds: float) -> bytes:
     """Bytes heard at the head sensor's speed; stops at the first head packet."""
-    from serial_devices import listen as listen_port
+    from drone_flight.flight.serial_devices import listen as listen_port
     with SCAN_LOCK:
         return listen_port(port, RVC_BAUD, seconds, until=has_rvc_packet)
 
@@ -217,21 +226,41 @@ class HeadSensorWatch:
 
 
 class HeadSteering:
-    """Mixed into ArduPilotFlightTransport: HEAD 1/0 lines and the turn rate while flying."""
+    """Mixed into ArduPilotFlightTransport: HEAD 1/0 lines, the turn rate and the camera tilt while flying."""
 
     def _cmd_head(self, on: int) -> None:
-        """On: where the head looks now becomes the drone's current heading."""
+        """On: where the head and eyes look now becomes the drone's current heading."""
         self._head_on = bool(on)
-        self._head_follow.clear()
+        self._clear_head_zero()
         self._head_recentre = self._head_on
         self._head_view_zero = None
+
+    def _clear_head_zero(self) -> None:
+        self._head_follow.clear()
+        self._eye_gaze.clear()
+        self._pitch_zero = None
 
     def _head_yaw(self) -> Optional[float]:
         reader = self.head  # read once: HeadSensorWatch can drop it at any moment
         return reader.latest(HEAD_FRESH_S) if reader is not None else None
 
+    def _head_pitch(self) -> Optional[float]:
+        reader = self.head
+        return reader.latest_pitch(HEAD_FRESH_S) if reader is not None else None
+
+    def _pupils(self) -> dict:
+        """Fresh pupil positions; nothing without eye cameras or when they fail, so only the head steers."""
+        eyes = self.eyes  # EyeCameras, or None without eye cameras
+        if eyes is None:
+            return {}
+        try:
+            return eyes.pupils(EYE_FRESH_S)
+        except Exception as exc:  # never stops the flight loop
+            self._last_error = f"eye cameras: {type(exc).__name__}: {exc}"
+            return {}
+
     def _turn_rate(self) -> int:
-        """Arrow keys win, then head steering."""
+        """Arrow keys win, then head steering with a little from the eyes."""
         if self._yaw_rate:
             self._head_recentre = self._head_on  # re-zero after an arrow turn
             return self._yaw_rate
@@ -240,10 +269,30 @@ class HeadSteering:
         head = self._head_yaw()
         att = self.link.latest("ATTITUDE", 0.5)
         drone = None if att is None else math.degrees(att.yaw)
+        pupils = self._pupils()
         if self._head_recentre and head is not None and drone is not None:
             self._head_follow.zero(head, drone)
+            # the eyes' and head pitch's straight ahead belong to the goggles: an arrow turn keeps them
+            if not self._eye_gaze.zeroed:
+                self._eye_gaze.zero(pupils)
+            if self._pitch_zero is None:
+                self._pitch_zero = self._head_pitch()
             self._head_recentre = False
-        return self._head_follow.rate(head, drone)
+        self._eye_turn = self._eye_gaze.offset(pupils)[0]
+        return self._head_follow.rate(head, drone, self._eye_turn)
+
+    def _tilt_target(self, pupils: dict) -> float:
+        """Camera tilt (+ = up) from the head and eyes while hovering with head steering, else level."""
+        if self._phase != "FLY" or not self._head_on or not self._head_follow.active:
+            return 0.0
+        pitch = self._head_pitch()
+        head_up = 0.0 if pitch is None or self._pitch_zero is None else wrap_deg(pitch - self._pitch_zero)
+        return tilt_for(HEAD_PITCH_SIGN * head_up, self._eye_gaze.offset(pupils)[1])
+
+    def _step_tilt(self, now: float) -> None:
+        # reading the eyes keeps their cameras on while head steering is on, so they see the eyes at take-off
+        pupils = self._pupils() if self._head_on else {}
+        self._tilt.update(self.link, self._tilt_target(pupils), now)
 
     def direction_status(self) -> dict:
         """Head and drone heading relative to straight ahead, and the current turn rate."""
@@ -260,5 +309,7 @@ class HeadSteering:
         return {"head_sensor": reader is not None, "head_on": self._head_on,
                 "head_offset": None if zero is None or head is None else round(wrap_deg(head - zero[0]), 1),
                 "drone_offset": None if zero is None or drone is None else round(wrap_deg(drone - zero[1]), 1),
-                "turn_rate": (self._yaw_rate or self._head_follow.rate(head, drone)) if flying else 0,
-                "arrow_rate": self._yaw_rate if flying else 0}
+                "turn_rate": (self._yaw_rate or self._head_follow.rate(head, drone, self._eye_turn)) if flying else 0,
+                "arrow_rate": self._yaw_rate if flying else 0,
+                "eye_turn": round(self._eye_turn, 1) if flying and self._head_on else 0.0,
+                "camera_tilt": round(self._tilt.angle, 1)}

@@ -18,7 +18,7 @@ from pathlib import Path
 import numpy as np
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 BUNDLES_ENV = "EEG_BUNDLES"
 MANIFEST = "bundle.json"
 BUNDLE_FORMAT = "stop-go-bundle/1"

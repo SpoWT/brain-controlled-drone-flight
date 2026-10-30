@@ -1,7 +1,7 @@
 """Goggle eye cameras: live view and pupil measurement.
 
-Each camera runs in its own thread while someone is watching. Frames go through goggle_pupil.detect_pupil
-and are served as /eyes/<n>.mjpg, with the numbers at /api/eyes.
+Each camera runs in its own thread while someone is watching or eye steering reads it. Frames go through
+goggle_pupil.detect_pupil and are served as /eyes/<n>.mjpg, with the numbers at /api/eyes.
 
 The two cameras are the same model and can report the same serial number, so they are told apart by their
 DirectShow device path and ordered by the USB port they sit on: EYE 1 / EYE 2 and their rotation settings
@@ -14,11 +14,15 @@ import json
 import math
 import os
 import re
+import statistics
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Optional
+
+from drone_flight import ROOT
 
 EYE_CAMERA_NAME = "Innomaker-U20CAM-1080p-S1"
 EYE_SLOTS = 2
@@ -32,6 +36,7 @@ MISSING_RETRY_S = 2.0         # camera not plugged in: look again this often
 REFRESH_EVERY_S = 3.0         # a slot without a camera: look for cameras this often
 PARTIAL_LOOKS = 3             # looks that skip placing cameras while one camera's USB port cannot be read
 EYE_AIM = (0.5, 0.5)
+PUPIL_SAMPLES = 5             # eye steering uses the median of the last locked pupils: blinks and jitter
 FIRST_FRAME_S = 12.0          # max wait for a camera to stream before opening the next
 FIRST_FRAMES = 3
 SAME_DIFF = 4.0               # mean grey difference below this = same camera
@@ -46,7 +51,7 @@ GAVE_UP = "Same picture as the other eye: re-plug the goggles' USB cable"
 THUMB_FRESH_S = 1.5
 ROTATIONS = (0, 90, 180, 270)  # clockwise
 CM_DRP_LOCATION_PATHS = 0x24
-DEFAULT_CONFIG = Path(__file__).resolve().parent / "output" / "eye_cameras.json"
+DEFAULT_CONFIG = ROOT / "output" / "eye_cameras.json"
 # Opening two of these cameras at the same moment can bind both to one device: open one at a time.
 _OPEN_LOCK = threading.Lock()
 _KNOWN_LOCATIONS: dict[str, str] = {}  # device path -> last USB location read for it
@@ -326,6 +331,7 @@ class EyeCamera:
         self._lock = threading.Lock()
         self._jpeg: Optional[bytes] = None
         self._numbers: dict = {"detected": False}
+        self._pupils: deque = deque(maxlen=PUPIL_SAMPLES)  # (x, y, time, view) of the last locked pupils
         self._fps = 0.0
         self._error = ""
         self._format = ""
@@ -379,6 +385,21 @@ class EyeCamera:
         with self._lock:
             return self._jpeg
 
+    def pupil(self, max_age: float) -> Optional[tuple[tuple, tuple[float, float]]]:
+        """(view, (x, y)): the median of the locked pupils of the last max_age seconds, as fractions of the picture,
+        or None. The view (rotation, camera) changes when the picture is turned or another camera takes the slot.
+        Keeps the camera on."""
+        self.touch()
+        with self._lock:
+            samples = list(self._pupils)
+        now = self._clock()
+        fresh = [sample for sample in samples if now - sample[2] <= max_age]
+        if not fresh:
+            return None
+        view = fresh[-1][3]
+        same = [sample for sample in fresh if sample[3] == view]
+        return view, (statistics.median([s[0] for s in same]), statistics.median([s[1] for s in same]))
+
     def status(self) -> dict:
         with self._lock:
             running = self._thread is not None and self._thread.is_alive()
@@ -404,7 +425,7 @@ class EyeCamera:
     def _detect(self):
         if self._detector is not None:
             return self._detector
-        from goggle_pupil import IrisModel, annotate, detect_pupil
+        from drone_flight.head.goggle_pupil import IrisModel, annotate, detect_pupil
         iris = IrisModel.load()  # None: classic detection only
 
         def run(frame, previous):
@@ -485,12 +506,15 @@ class EyeCamera:
                     continue
                 last_ok, reopens = self._clock(), 0
                 small = thumbnail(frame) if hasattr(frame, "ndim") else None
-                frame = rotate_frame(frame, self.rotation)
+                rotation = self.rotation
+                frame = rotate_frame(frame, rotation)
                 result, jpeg = detect(frame, previous)
                 previous = (result.x, result.y) if result.locked else None
                 now = self._clock()
                 with self._lock:
                     self._jpeg, self._numbers, self._error = jpeg, measure(result, frame.shape[1]), ""
+                    if result.locked:
+                        self._pupils.append((result.x, result.y, now, (rotation, device.path if device else "")))
                     if small is not None:
                         self._thumb, self._thumb_at = small, now
                     self._fps = 0.8 * self._fps + 0.2 * (1.0 / max(now - last, 1e-3))
@@ -644,6 +668,16 @@ class EyeCameras:
                     f"Same picture as the other eye: reopening ({self._reopens[later]})")
             else:
                 self._gave_up.add(later)
+
+    def pupils(self, max_age: float) -> dict[tuple, tuple[float, float]]:
+        """Fresh pupil positions for eye steering, keyed by (eye, rotation, camera): turning a picture or swapping a
+        camera gives a new key, so an old straight-ahead point is never used for it."""
+        found = {}
+        for number, camera in enumerate(self.cameras):
+            seen = camera.pupil(max_age)
+            if seen is not None:
+                found[(number, *seen[0])] = seen[1]
+        return found
 
     def status(self) -> list[dict]:
         if any(camera.missing() for camera in self.cameras) and \

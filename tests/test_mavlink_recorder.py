@@ -4,8 +4,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from ardupilot_link import STREAMS, ArduPilotLink
-from mavlink_recorder import MavlinkRecorder
+from drone_flight.flight.ardupilot_link import STREAMS, ArduPilotLink
+from drone_flight.flight.mavlink_recorder import MavlinkRecorder
 from tests.fake_ardupilot import FakeArduPilot, Msg
 
 

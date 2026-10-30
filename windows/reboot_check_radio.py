@@ -13,11 +13,10 @@ from pathlib import Path
 os.environ.setdefault("MAVLINK20", "1")
 from pymavlink import mavutil  # noqa: E402
 
-# serial_devices.py: the repo root above windows/, or the website folder on the laptop
-sys.path[:0] = [str(Path(__file__).resolve().parent.parent), str(Path.home() / "NeuralFlightWeb")]
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # the repo folder, for drone_flight
 DEVICE = sys.argv[1] if len(sys.argv) > 1 and sys.argv[1].lower() != "auto" else ""
 if not DEVICE:
-    from serial_devices import find_radio  # noqa: E402
+    from drone_flight.flight.serial_devices import find_radio  # noqa: E402
     DEVICE, seen = find_radio()
     if DEVICE is None:
         raise SystemExit(f"REFUSED: {seen}")

@@ -12,7 +12,7 @@ from typing import Callable, Protocol
 
 import numpy as np
 
-from bci_v2 import acquisition
+from bci_game import acquisition
 
 from .config import BUFFER_SECONDS, MAINS_HZ, N_CHANNELS, PULL_INTERVAL_S, SAMPLE_RATE
 
@@ -32,7 +32,7 @@ class SourceError(RuntimeError):
 
 
 class GanglionSource:
-    """A Ganglion opened by ``bci_v2.acquisition`` (the same connection the flying website uses)."""
+    """A Ganglion opened by ``bci_game.acquisition`` (the same connection the flying website uses)."""
 
     kind = "ganglion"
 

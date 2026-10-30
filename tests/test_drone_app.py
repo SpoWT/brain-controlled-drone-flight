@@ -1,19 +1,14 @@
-"""Drone App: connection checks, verdict and session recording."""
+"""Drone App: connection checks, verdict, and starting the website."""
 import importlib.machinery
 import importlib.util
-import json
 import sys
-import tempfile
-import time
 import unittest
 from pathlib import Path
 
-APP = Path(__file__).resolve().parents[1] / "drone_app"
-sys.path.insert(0, str(APP))  # drone_checks.py lives at the top, shared with the website
+APP = Path(__file__).resolve().parents[1] / "windows" / "drone_app"
+sys.path.insert(0, str(APP))
 
-from drone_checks import build_checks, last_landing_reason, verdict  # noqa: E402
-from drone_recording import DataLog, MavlinkSlice, ScreenRecorder, Session  # noqa: E402
-from window_capture import PAGE_TITLE, Window, choose_window  # noqa: E402
+from drone_flight.web.drone_checks import build_checks, last_landing_reason, verdict  # noqa: E402
 
 USB = {"com_ports": ["COM4", "COM5"]}
 REC = {"on": True, "seconds": 75, "bytes": 3_000_000, "error": ""}
@@ -144,132 +139,66 @@ class ChecklistTests(unittest.TestCase):
         self.assertEqual(verdict(build_checks("starting", None, USB, REC), None).title, "STARTING")
 
 
-class FakeWriter:
-    def __init__(self):
-        self.frames, self.released = 0, False
-
-    def write(self, frame):
-        self.frames += 1
-
-    def release(self):
-        self.released = True
-
-
-class RecordingTests(unittest.TestCase):
-    def test_screen_keeps_real_time_and_splits_files(self):
-        import cv2  # noqa: F401  (imported first: the first import takes a moment)
-        import numpy as np
-        writers = []
-
-        def writer(path, fps, size):
-            writers.append((path.name, size, FakeWriter()))
-            return writers[-1][2]
-
-        folder = Path(tempfile.mkdtemp())
-        recorder = ScreenRecorder(folder, grab=lambda: np.zeros((1600, 2560, 3), np.uint8), writer=writer,
-                                  fps=10, segment_s=0.3)
-        recorder.start()
-        time.sleep(1.0)
-        recorder.stop()
-        self.assertEqual(writers[0][1], (1920, 1200), "scaled down to 1920 wide")
-        self.assertGreaterEqual(len(writers), 2, "a new file every segment")
-        self.assertTrue(all(w.released for _, _, w in writers))
-        self.assertGreaterEqual(recorder.frames, 6, "about 10 frames per second of real time")
-        self.assertEqual(recorder.error, "")
-
-    def test_closed_page_keeps_the_timeline_going(self):
-        import numpy as np
-        pictures = [None, None, np.zeros((100, 200, 3), np.uint8)] + [None] * 1000
-        writers = []
-
-        def writer(path, fps, size):
-            writers.append(FakeWriter())
-            return writers[-1]
-
-        recorder = ScreenRecorder(Path(tempfile.mkdtemp()), grab=lambda: pictures.pop(0), writer=writer, fps=10)
-        recorder.start()
-        time.sleep(0.9)
-        recorder.stop()
-        self.assertEqual(len(writers), 1, "starts with the first picture")
-        self.assertGreaterEqual(writers[0].frames, 3, "keeps writing the last picture while the page is closed")
-        self.assertEqual(recorder.error, "")
-
-    def test_screen_error_is_reported_not_raised(self):
-        def broken():
-            raise OSError("screen locked")
-        recorder = ScreenRecorder(Path(tempfile.mkdtemp()), grab=broken, writer=lambda *a: FakeWriter())
-        recorder.start()
-        recorder.stop()
-        self.assertIn("screen locked", recorder.error)
-
-    def test_events_tell_the_story(self):
-        folder = Path(tempfile.mkdtemp())
-        log = DataLog(folder)
-        ground = checkup()
-        flying = checkup(**{"service.mode": "HOVERING", "service.last_command": "TAKEOFF 300",
-                            "service.telemetry.armed": True})
-        landed = checkup(**{"service.last_fault": "OVER_HEIGHT", "service.fault_help": "Too high."})
-        for data in (ground, flying, flying, landed):
-            checks = build_checks("up", data, USB, REC)
-            log.record("up", data, checks, verdict(checks, data))
-        log.close()
-        events = (folder / "events.txt").read_text()
-        self.assertIn("READY TO FLY", events)
-        self.assertIn("Command sent: TAKEOFF 300", events)
-        self.assertIn("Drone mode: HOVERING", events)
-        self.assertIn("AUTOMATIC LANDING: OVER_HEIGHT - Too high.", events)
-        self.assertEqual(events.count("Drone mode: HOVERING"), 1, "only changes are written")
-        lines = (folder / "data.jsonl").read_text().splitlines()
-        self.assertEqual(len(lines), 4)
-        self.assertEqual(json.loads(lines[1])["checkup"]["service"]["mode"], "HOVERING")
-
-    def test_session_copies_the_drone_messages_heard_while_open(self):
-        root = Path(tempfile.mkdtemp())
-        mav = root / "mav_old.jsonl"
-        mav.write_text("before\n")
-        session = Session(root / "rec", screen=ScreenRecorder(root, grab=lambda: None, writer=None))
-        session.screen._stop.set()
-        data = checkup(mavlink_log={"path": str(mav), "error": ""})
-        session.mavlink._start = time.time() + 60  # the log file is older than this session
-        checks = build_checks("up", data, USB, REC)
-        session.record("up", data, checks, verdict(checks, data))
-        with open(mav, "a") as handle:
-            handle.write("during\n")
-        session.close()
-        self.assertEqual((session.folder / "drone_mavlink.jsonl").read_text(), "during\n")
-        summary = json.loads((session.folder / "session.json").read_text())
-        self.assertEqual(summary["mavlink_sources"], [str(mav)])
-        self.assertIn("Drone App closed", (session.folder / "events.txt").read_text())
-
-    def test_mavlink_slice_new_file_from_the_start(self):
-        root = Path(tempfile.mkdtemp())
-        mav = root / "mav_new.jsonl"
-        mav.write_text("first\n")
-        piece = MavlinkSlice(time.time())
-        piece.see(str(mav))
-        self.assertIsNone(piece.copy_to(root / "out.jsonl"))
-        self.assertEqual((root / "out.jsonl").read_text(), "first\n")
+def load_app():
+    loader = importlib.machinery.SourceFileLoader("drone_app_main", str(APP / "drone_app.pyw"))
+    module = importlib.util.module_from_spec(importlib.util.spec_from_loader("drone_app_main", loader))
+    loader.exec_module(module)
+    module.POLL_S = 0.0
+    return module
 
 
 class AppFileTests(unittest.TestCase):
-    def test_app_imports_without_windows(self):
-        loader = importlib.machinery.SourceFileLoader("drone_app_main", str(APP / "drone_app.pyw"))
-        module = importlib.util.module_from_spec(importlib.util.spec_from_loader("drone_app_main", loader))
-        loader.exec_module(module)
-        self.assertFalse(module.flying({"website": "up", "checkup": checkup()}))
-        up = {"website": "up", "checkup": checkup(**{"service.mode": "HOVERING", "service.telemetry.armed": True})}
-        self.assertTrue(module.flying(up), "asks twice before stopping the recording in flight")
-        self.assertIn("--disable-backgrounding-occluded-windows", module.BROWSER_FLAGS,
-                      "the page keeps sending keys when covered")
+    """The Drone App only starts the website and opens the flying page: no window or recording of its own."""
 
-    def test_finds_our_flying_page_window(self):
-        windows = [Window(1, 50, "Optical Hover Control - Google Chrome", "Chrome_WidgetWin_1", 900, True),
-                   Window(2, 77, PAGE_TITLE, "Chrome_WidgetWin_1", 4000, True),
-                   Window(3, 77, "", "Chrome_WidgetWin_1", 10, True),
-                   Window(4, 77, PAGE_TITLE, "Chrome_WidgetWin_1", 9000, False)]
-        self.assertEqual(choose_window(windows, {77}), 2, "our browser's biggest visible window")
-        self.assertEqual(choose_window(windows, {99}), 2, "else the app-mode window titled like the page")
-        self.assertIsNone(choose_window(windows[:1], set()), "never a normal browser tab")
+    def test_app_imports_without_windows(self):
+        app = load_app()
+        self.assertIn("--disable-backgrounding-occluded-windows", app.BROWSER_FLAGS,
+                      "the page keeps sending keys when covered")
+        self.assertFalse((APP / "drone_recording.py").exists())
+
+    def run_main(self, app, health):
+        calls = []
+        app.first_instance = lambda: True
+        app.get_json = lambda path, timeout=1.0: (calls.append(path), health)[1]
+        app.close_page_windows = lambda: calls.append("close pages")
+        app.start_website = lambda: calls.append("restart") or ""
+        app.open_page = lambda: calls.append("open page") or ""
+        app.tell = lambda text: calls.append(("told", text))
+        return app.main(), calls
+
+    def test_flying_drone_is_left_alone(self):
+        app = load_app()
+        result, calls = self.run_main(app, (200, {"mode": "HOVERING"}))
+        self.assertEqual(result, 1)
+        self.assertEqual(calls, ["/launcher-health", ("told", app.BUSY)],
+                         "no restart and no new page: opening the page would land the drone")
+
+    def test_disarmed_closes_old_pages_then_restarts_and_opens_one(self):
+        app = load_app()
+        for health in ((200, {"mode": "DISARMED"}), (0, None)):
+            result, calls = self.run_main(app, health)
+            self.assertEqual(result, 0)
+            self.assertEqual(calls, ["/launcher-health", "close pages", "restart", "open page"],
+                             "an old page's token would keep the drone on the ground")
+
+    def test_restart_waits_for_the_new_website(self):
+        app = load_app()
+        answers = iter([(200, None), (0, None), (0, None), (200, {"mode": "DISARMED"})])
+        asked = []
+        app.get_json = lambda path, timeout=1.0: (asked.append(path), next(answers))[1]
+        app.run_start_task = lambda: ""
+        self.assertEqual(app.start_website(), "")
+        self.assertEqual(len(asked), 4, "waits until the old website went away and the new one answers")
+        self.assertNotIn("/", asked, "never loads the page itself")
+
+    def test_reports_a_website_that_never_starts(self):
+        app = load_app()
+        app.START_WAIT_S = 0.05
+        app.get_json = lambda path, timeout=1.0: (0, None)
+        app.run_start_task = lambda: ""
+        self.assertIn("did not start", app.start_website())
+        app.run_start_task = lambda: "NeuralFlightAppStart failed: not found"
+        self.assertEqual(app.start_website(), "NeuralFlightAppStart failed: not found")
 
 
 if __name__ == "__main__":

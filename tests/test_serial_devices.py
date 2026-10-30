@@ -5,9 +5,9 @@ from types import SimpleNamespace as NS
 
 os.environ.setdefault("MAVLINK20", "1")
 
-from ardupilot_link import ArduPilotLink  # noqa: E402
-from head_follow import HeadSensorWatch  # noqa: E402
-from serial_devices import NO_RADIO, RADIO_SILENT_S, RadioWatch, find_radio, has_fc_heartbeat  # noqa: E402
+from drone_flight.flight.ardupilot_link import ArduPilotLink  # noqa: E402
+from drone_flight.head.head_follow import HeadSensorWatch  # noqa: E402
+from drone_flight.flight.serial_devices import NO_RADIO, RADIO_SILENT_S, RadioWatch, find_radio, has_fc_heartbeat  # noqa: E402
 
 
 def heartbeat_bytes(system=1, component=1, mav_type=2, armed=False):
@@ -123,7 +123,7 @@ class RadioWatchTests(unittest.TestCase):
             self.assertIn("keeping the port", watch.note)
 
     def test_after_a_minute_of_silence_in_the_air_every_port_is_checked_again(self):
-        from serial_devices import FLYING_HOLD_S
+        from drone_flight.flight.serial_devices import FLYING_HOLD_S
         link = FakeLink("COM7")
         link.quiet = FLYING_HOLD_S
         watch, calls = self.make(link, found=("COM7", ""), flying=True)
@@ -194,7 +194,7 @@ class LinkPortTests(unittest.TestCase):
 
 class HeadSteeringBeforeTheDroneTests(unittest.TestCase):
     def test_head_steering_can_be_switched_on_before_the_drone_is_heard(self):
-        from ardupilot_flight_transport import ArduPilotFlightTransport
+        from drone_flight.flight.ardupilot_flight_transport import ArduPilotFlightTransport
         link = ArduPilotLink("", connection_factory=FakeConnection, start_reader=False)
         transport = ArduPilotFlightTransport("", link=link, start_worker=False)
         transport.send("HEAD 1")
@@ -205,7 +205,7 @@ class HeadSteeringBeforeTheDroneTests(unittest.TestCase):
 
 class CutDuringRadioOutageTests(unittest.TestCase):
     def test_motor_cut_keeps_going_until_the_drone_is_heard_disarmed(self):
-        from ardupilot_flight_transport import CUT_REPEAT_S
+        from drone_flight.flight.ardupilot_flight_transport import CUT_REPEAT_S
         from tests.test_ardupilot_transport import Sim
         sim = Sim(self)
         sim.arm(1000)
@@ -229,7 +229,7 @@ class CutDuringRadioOutageTests(unittest.TestCase):
 
 class SecondCutTests(unittest.TestCase):
     def test_pressing_the_cut_again_keeps_it_repeating(self):
-        from ardupilot_flight_transport import CUT_REPEAT_S
+        from drone_flight.flight.ardupilot_flight_transport import CUT_REPEAT_S
         from tests.test_ardupilot_transport import Sim
         sim = Sim(self)
         sim.arm(1000)

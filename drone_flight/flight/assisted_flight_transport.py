@@ -7,7 +7,7 @@ import threading
 import time
 from typing import Callable, Optional
 
-from assisted_flight_protocol import (
+from drone_flight.flight.assisted_flight_protocol import (
     TRANSMITTER_MARKER,
     ConfigTelemetry,
     FlightTelemetry,

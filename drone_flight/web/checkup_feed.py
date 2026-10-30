@@ -9,7 +9,7 @@ import time
 from dataclasses import asdict
 from typing import Optional
 
-from drone_checks import build_checks
+from drone_flight.web.drone_checks import build_checks
 
 BATTERY_FRESH_S = 5.0       # SYS_STATUS every 2 s
 HEAD_FRESH_S = 0.5

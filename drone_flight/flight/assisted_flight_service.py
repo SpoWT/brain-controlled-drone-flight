@@ -10,7 +10,8 @@ import time
 from pathlib import Path
 from typing import Callable, Optional
 
-from assisted_flight_protocol import (
+from drone_flight import ROOT
+from drone_flight.flight.assisted_flight_protocol import (
     ACTIVE_PHASES,
     FAULT_HELP,
     FLAG_CALIBRATED,
@@ -24,10 +25,10 @@ from assisted_flight_protocol import (
     LANDING_PHASES,
     TAKEOFF_PHASES,
 )
-from flight_sticks import MAX_SPEED_MM_S  # one speed cap for the page, service and sticks
+from drone_flight.flight.flight_sticks import MAX_SPEED_MM_S  # one speed cap for the page, service and sticks
 
-DEFAULT_CALIBRATION_PATH = Path(__file__).resolve().parent / "output" / "assisted_flight_calibration.json"
-DEFAULT_FLIGHT_LOG_DIR = Path(__file__).resolve().parent / "outputs" / "flight_logs"
+DEFAULT_CALIBRATION_PATH = ROOT / "output" / "assisted_flight_calibration.json"
+DEFAULT_FLIGHT_LOG_DIR = ROOT / "outputs" / "flight_logs"
 MIN_TARGET_MM, MAX_TARGET_MM = 300, 2000
 MAX_YAW_DEG_S = 60
 MAX_MOVE_MM = 5000

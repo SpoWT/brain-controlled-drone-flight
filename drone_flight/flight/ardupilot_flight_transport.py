@@ -14,13 +14,14 @@ import threading
 import time
 from typing import Callable, Optional
 
-from ardupilot_link import MODE_ALT_HOLD, MODE_LAND, MODE_LOITER, ArduPilotLink
-from flight_sticks import MAX_SPEED_MM_S, lean_for_speed, plan_for, throttle_for_climb, yaw_stick  # noqa: F401
-from follow_guard import HEIGHT_BAND_MM, FollowGuard
-from head_follow import HeadFollow, HeadSteering
-from height_planner import LASER_STEADY_S, HeightPlanner
-from runaway_guard import RunawayGuard, speed_mm_s, tilt_deg
-from assisted_flight_protocol import (
+from drone_flight.flight.ardupilot_link import MODE_ALT_HOLD, MODE_LAND, MODE_LOITER, ArduPilotLink
+from drone_flight.flight.flight_sticks import MAX_SPEED_MM_S, lean_for_speed, plan_for, throttle_for_climb, yaw_stick  # noqa: F401
+from drone_flight.flight.follow_guard import HEIGHT_BAND_MM, FollowGuard
+from drone_flight.head.eye_steering import CameraTilt, EyeGaze
+from drone_flight.head.head_follow import HeadFollow, HeadSteering
+from drone_flight.flight.height_planner import LASER_STEADY_S, HeightPlanner
+from drone_flight.flight.runaway_guard import RunawayGuard, speed_mm_s, tilt_deg
+from drone_flight.flight.assisted_flight_protocol import (
     FLAG_ARMED, FLAG_CALIBRATED, FLAG_FLOW_OK, FLAG_LASER_OK, FLAG_LINK_OK, FLAG_MOVE_DONE,
     FLAG_POS_HOLD, ConfigTelemetry, FlightTelemetry,
 )
@@ -141,8 +142,11 @@ class ArduPilotFlightTransport(HeightPlanner, HeadSteering):
         self._cmd_body: tuple[float, float] = (0.0, 0.0)  # mm/s
         self._yaw_rate = 0  # deg/s from the arrow keys
         self.head = None    # HeadYawReader, set by the website
+        self.eyes = None    # EyeCameras, set by the website
         self._head_on, self._head_follow, self._head_recentre = False, HeadFollow(), False
         self._head_view_zero = None
+        self._eye_gaze, self._eye_turn, self._pitch_zero = EyeGaze(), 0.0, None
+        self._tilt = CameraTilt()
         self._touchdown_since = 0.0
         self._plan_end = 0.0
         self._plan_stick = 500
@@ -209,7 +213,7 @@ class ArduPilotFlightTransport(HeightPlanner, HeadSteering):
         self._ground_mm = self._height_mm() or 20
         self._loiter_asked_at, self._loiter_refused = None, False
         self._level_only, self._runaway, self._blind_since = False, RunawayGuard(), None
-        self._head_follow.clear()  # re-centred every flight
+        self._clear_head_zero()  # re-centred every flight
         self._head_recentre = self._head_on
         self._follow, self._cmd_body = FollowGuard(), (0.0, 0.0)
         self._plan_end, self._plan_target, self._plans = 0.0, None, []
@@ -374,6 +378,12 @@ class ArduPilotFlightTransport(HeightPlanner, HeadSteering):
         if now - self._last_gcs_heartbeat >= 1.0:
             self.link.send_gcs_heartbeat()
             self._last_gcs_heartbeat = now
+        try:  # after the heartbeat: a camera tilt problem never lands the drone
+            with self._lock:
+                self._step_tilt(now)
+        except Exception as exc:
+            with self._lock:
+                self._last_error = f"camera tilt: {type(exc).__name__}: {exc}"
 
     def _step_spinup(self, now: float) -> None:
         """Arm in LOITER, or ALT_HOLD if refused."""
